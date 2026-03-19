@@ -144,11 +144,11 @@ resource "aws_security_group" "nodes" {
   }
 
   ingress {
-    from_port                = 1025
-    to_port                  = 65535
-    protocol                 = "tcp"
-    source_security_group_id = aws_security_group.cluster.id
-    description              = "Control plane → nodes (kubelet, pods)"
+    from_port       = 1025
+    to_port         = 65535
+    protocol        = "tcp"
+    security_groups = [aws_security_group.cluster.id]
+    description     = "Control plane → nodes (kubelet, pods)"
   }
 
   egress {
