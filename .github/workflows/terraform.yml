@@ -277,7 +277,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [changed-envs, plan]
     permissions:
-      contents: write   # needed to post commit comments
+      contents: write     # post commit comments
+      deployments: write  # stamp pending deployment status with cost info
     if: >
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')
@@ -290,7 +291,7 @@ jobs:
           merge-multiple: false
         continue-on-error: true
 
-      - name: Build cost summary and post commit comment
+      - name: Build cost summary, resource breakdown, and update deployment status
         uses: actions/github-script@v7
         with:
           script: |
@@ -298,65 +299,120 @@ jobs:
             const path = require('path');
 
             const resultsDir = '/tmp/infracost-results';
-            const files = fs.existsSync(resultsDir)
-              ? fs.readdirSync(resultsDir, { withFileTypes: true })
-                  .filter(d => d.isDirectory())
-                  .flatMap(d => {
-                    const dir = path.join(resultsDir, d.name);
-                    return fs.readdirSync(dir)
-                      .filter(f => f.endsWith('.json'))
-                      .map(f => ({ env: d.name.replace(/^infracost-/, ''), file: path.join(dir, f) }));
-                  })
+            const envDirs = fs.existsSync(resultsDir)
+              ? fs.readdirSync(resultsDir, { withFileTypes: true }).filter(d => d.isDirectory())
               : [];
 
-            if (files.length === 0) {
-              core.summary.addRaw('## 💰 Cost Gate\nNo Infracost data found (API key not set or plan had no changes).\n');
-              await core.summary.write();
+            if (envDirs.length === 0) {
+              await core.summary.addRaw('## 💰 Cost Gate\nNo Infracost data (API key not set or no plan changes).\n').write();
               return;
             }
 
-            let tableRows = [];
-            let totalCost  = 0;
-            let totalDelta = 0;
+            // ── Parse each environment's Infracost JSON ───────────────────────
+            const envData = [];
+            for (const d of envDirs) {
+              const envName = d.name.replace(/^infracost-/, '');
+              const dir = path.join(resultsDir, d.name);
+              const jsonFile = fs.readdirSync(dir).find(f => f.endsWith('.json'));
+              if (!jsonFile) continue;
+              const data = JSON.parse(fs.readFileSync(path.join(dir, jsonFile), 'utf8'));
+              const totalCost  = parseFloat(data.totalMonthlyCost       || 0);
+              const deltaCost  = parseFloat(data.diffTotalMonthlyCost   || 0);
+              // diff.resources = only resources added/changed in THIS run
+              const diffResources = (data.projects || []).flatMap(p => p.diff?.resources || []);
+              envData.push({ envName, totalCost, deltaCost, diffResources });
+            }
+            envData.sort((a, b) => a.envName.localeCompare(b.envName));
 
-            for (const { env, file } of files) {
-              const data  = JSON.parse(fs.readFileSync(file, 'utf8'));
-              const cost  = parseFloat(data.totalMonthlyCost  || 0);
-              const delta = parseFloat(data.diffTotalMonthlyCost || 0);
-              totalCost  += cost;
-              totalDelta += delta;
-              const sign  = delta >= 0 ? '+' : '';
-              tableRows.push([env, `$${cost.toFixed(2)}`, `${sign}$${delta.toFixed(2)}`]);
+            const grandTotal = envData.reduce((s, e) => s + e.totalCost,  0);
+            const grandDelta = envData.reduce((s, e) => s + e.deltaCost, 0);
+            const gSign = grandDelta >= 0 ? '+' : '';
+
+            // ── Job Summary ───────────────────────────────────────────────────
+            core.summary.addHeading('💰 Cost Gate — Review Before Approving Apply', 2);
+
+            // Environment-level summary table
+            core.summary.addTable([
+              [{ data: 'Environment',        header: true },
+               { data: 'Total Monthly Cost', header: true },
+               { data: 'Delta (this run)',   header: true },
+               { data: 'New/Changed Resources', header: true }],
+              ...envData.map(({ envName, totalCost, deltaCost, diffResources }) => {
+                const s = deltaCost >= 0 ? '+' : '';
+                return [envName, `$${totalCost.toFixed(2)}`, `${s}$${deltaCost.toFixed(2)}`, String(diffResources.length)];
+              }),
+              ['**TOTAL**', `**$${grandTotal.toFixed(2)}**`, `**${gSign}$${grandDelta.toFixed(2)}**`, '']
+            ]);
+
+            // Per-environment resource breakdown (resources created in this run)
+            for (const { envName, deltaCost, diffResources } of envData) {
+              const s = deltaCost >= 0 ? '+' : '';
+              core.summary.addHeading(`${envName}  —  ${s}$${deltaCost.toFixed(2)}/mo`, 3);
+              if (diffResources.length === 0) {
+                core.summary.addRaw('_No resource changes in this run._\n\n');
+                continue;
+              }
+              const resourceRows = diffResources
+                .map(r => ({
+                  name:  r.name,
+                  type:  r.resourceType || '',
+                  cost:  parseFloat(r.monthlyCost || 0),
+                  components: (r.costComponents || [])
+                    .map(c => `${c.name}: ${c.monthlyQuantity || 0} × $${c.price || 0} = $${parseFloat(c.monthlyCost || 0).toFixed(2)}/mo`)
+                    .join(', ')
+                }))
+                .sort((a, b) => b.cost - a.cost);
+
+              core.summary.addTable([
+                [{ data: 'Resource',        header: true },
+                 { data: 'Type',            header: true },
+                 { data: 'Monthly Cost',    header: true },
+                 { data: 'Cost Components', header: true }],
+                ...resourceRows.map(r => [r.name, r.type, `$${r.cost.toFixed(2)}`, r.components || '—'])
+              ]);
             }
 
-            const sign = totalDelta >= 0 ? '+' : '';
-
-            // ── Job Summary (visible in the cost-gate job page) ───────────────
-            core.summary
-              .addHeading('💰 Cost Gate — Review Before Approving Apply', 2)
-              .addTable([
-                [{ data: 'Environment', header: true },
-                 { data: 'Monthly Cost', header: true },
-                 { data: 'Delta vs Current', header: true }],
-                ...tableRows,
-                ['**TOTAL**', `**$${totalCost.toFixed(2)}**`, `**${sign}$${totalDelta.toFixed(2)}**`]
-              ])
-              .addRaw(`\n> ⚠️ Approve the apply jobs below only if the cost delta is acceptable.\n`)
-              .addRaw(`> 🔗 [View full workflow run](${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID})\n`);
+            core.summary.addRaw('\n> ⚠️ Approve each `terraform-*` environment below only if the cost delta is acceptable.\n');
             await core.summary.write();
 
-            // ── Commit comment (visible on the SHA in GitHub) ─────────────────
-            const rows = tableRows.map(([e, c, d]) => `| ${e} | ${c} | ${d} |`).join('\n');
+            // ── Commit comment with resource-level breakdown ──────────────────
+            const summaryLines = [
+              '## 💰 Terraform Cost Estimate',
+              '',
+              '| Environment | Total Monthly | Delta (this run) | New Resources |',
+              '|-------------|--------------|-----------------|---------------|',
+              ...envData.map(({ envName, totalCost, deltaCost, diffResources }) => {
+                const s = deltaCost >= 0 ? '+' : '';
+                return `| ${envName} | $${totalCost.toFixed(2)} | ${s}$${deltaCost.toFixed(2)} | ${diffResources.length} |`;
+              }),
+              `| **TOTAL** | **$${grandTotal.toFixed(2)}** | **${gSign}$${grandDelta.toFixed(2)}** | |`,
+            ];
+
+            const detailSections = envData.map(({ envName, deltaCost, diffResources }) => {
+              if (diffResources.length === 0) return `**${envName}**: no resource changes`;
+              const s = deltaCost >= 0 ? '+' : '';
+              const rows = diffResources
+                .map(r => ({ name: r.name, type: r.resourceType || '', cost: parseFloat(r.monthlyCost || 0) }))
+                .sort((a, b) => b.cost - a.cost)
+                .map(r => `| \`${r.name}\` | ${r.type} | $${r.cost.toFixed(2)} |`)
+                .join('\n');
+              return [
+                `<details><summary><b>${envName}</b> — ${s}$${deltaCost.toFixed(2)}/mo (${diffResources.length} resources)</summary>`,
+                '',
+                '| Resource | Type | Monthly Cost |',
+                '|----------|------|-------------|',
+                rows,
+                '',
+                '</details>'
+              ].join('\n');
+            });
+
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
             const body = [
-              `## 💰 Terraform Cost Estimate`,
-              ``,
-              `| Environment | Monthly Cost | Delta |`,
-              `|-------------|-------------|-------|`,
-              rows,
-              `| **TOTAL** | **$${totalCost.toFixed(2)}** | **${sign}$${totalDelta.toFixed(2)}** |`,
-              ``,
-              `> Approve the \`terraform-*\` environments below to proceed with apply.`,
-              `> Run: [${process.env.GITHUB_RUN_ID}](${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID})`
+              ...summaryLines, '',
+              '### Resource Breakdown (new/changed resources in this run)', '',
+              ...detailSections, '',
+              `> 👉 [View Cost Gate summary](${runUrl}) · Approve \`terraform-*\` environments to proceed`
             ].join('\n');
 
             await github.rest.repos.createCommitComment({
@@ -365,6 +421,33 @@ jobs:
               commit_sha: context.sha,
               body
             });
+
+            // ── Update pending deployment status for each env ─────────────────
+            // GitHub creates deployments for apply jobs after cost-gate completes.
+            // Retry up to 5 × 5s to find them, then stamp them with cost info.
+            for (const { envName, totalCost, deltaCost, diffResources } of envData) {
+              const s = deltaCost >= 0 ? '+' : '';
+              const desc = `💰 $${totalCost.toFixed(2)}/mo | delta ${s}$${deltaCost.toFixed(2)} | ${diffResources.length} resources`;
+              let found = false;
+              for (let i = 0; i < 5; i++) {
+                const { data: deploys } = await github.rest.repos.listDeployments({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  environment: `terraform-${envName}`, ref: context.sha, per_page: 5
+                });
+                if (deploys.length > 0) {
+                  await github.rest.repos.createDeploymentStatus({
+                    owner: context.repo.owner, repo: context.repo.repo,
+                    deployment_id: deploys[0].id,
+                    state: 'pending',
+                    description: desc.slice(0, 140),
+                    log_url: runUrl
+                  });
+                  found = true; break;
+                }
+                await new Promise(r => setTimeout(r, 5000));
+              }
+              if (!found) core.info(`No deployment found for terraform-${envName} — status not updated`);
+            }
 
   # ── Terraform Apply (main branch only, post-PR-approval) ─────────────────────
   apply:
@@ -412,7 +495,8 @@ jobs:
         run: terraform apply -input=false tfplan
 
       - name: Notify Teams on success
-        if: success()
+        if: success() && secrets.TEAMS_WEBHOOK != ''
+        continue-on-error: true
         uses: aliencube/microsoft-teams-actions@v0.8.0
         with:
           webhook_uri: ${{ secrets.TEAMS_WEBHOOK }}
@@ -421,7 +505,8 @@ jobs:
           theme_color: "0078D4"
 
       - name: Notify Teams on failure
-        if: failure()
+        if: failure() && secrets.TEAMS_WEBHOOK != ''
+        continue-on-error: true
         uses: aliencube/microsoft-teams-actions@v0.8.0
         with:
           webhook_uri: ${{ secrets.TEAMS_WEBHOOK }}
