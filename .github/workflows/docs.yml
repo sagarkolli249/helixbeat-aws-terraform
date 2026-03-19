@@ -64,9 +64,11 @@ jobs:
             mkdocs-awesome-pages-plugin
 
       - name: Build docs site
+        if: hashFiles('mkdocs.yml') != ''
         run: mkdocs build --strict
 
       - name: Deploy to GitHub Pages
+        if: hashFiles('mkdocs.yml') != ''
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

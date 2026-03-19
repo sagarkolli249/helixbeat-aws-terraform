@@ -31,10 +31,29 @@ permissions:
   issues: write
 
 jobs:
+  # ── 0. GUARD – skip all jobs if no application code exists yet ───────────────
+  check-app:
+    name: Check application code exists
+    runs-on: ubuntu-latest
+    outputs:
+      has-dockerfile: ${{ steps.check.outputs.has-dockerfile }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          if [ -f "Dockerfile" ]; then
+            echo "has-dockerfile=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has-dockerfile=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No Dockerfile found — skipping product release pipeline."
+          fi
+
   # ── 1. BUILD ─────────────────────────────────────────────────────────────────
   build:
     name: Build & Push to ECR
     runs-on: ubuntu-latest
+    needs: check-app
+    if: needs.check-app.outputs.has-dockerfile == 'true'
     env:
       ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
     outputs:
