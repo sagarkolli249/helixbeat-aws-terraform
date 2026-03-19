@@ -50,7 +50,7 @@ resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.this.id
   cidr_block              = cidrsubnet(var.vpc_cidr, 4, count.index)
   availability_zone       = var.availability_zones[count.index]
-  map_public_ip_on_launch = false   # hardened: no auto-public IPs
+  map_public_ip_on_launch = false # hardened: no auto-public IPs
 
   tags = merge(var.tags, {
     Name                                        = "${var.project}-${var.environment}-public-${var.availability_zones[count.index]}"

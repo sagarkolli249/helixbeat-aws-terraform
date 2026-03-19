@@ -118,7 +118,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "cloudtrail" {
     }
 
     expiration {
-      days = 2555  # 7 years
+      days = 2555 # 7 years
     }
   }
 }
@@ -216,8 +216,8 @@ resource "aws_iam_role_policy" "cloudtrail_cw" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect = "Allow"
-      Action = ["logs:CreateLogStream", "logs:PutLogEvents"]
+      Effect   = "Allow"
+      Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
       Resource = "${aws_cloudwatch_log_group.cloudtrail.arn}:*"
     }]
   })
@@ -315,25 +315,25 @@ resource "aws_s3_bucket_policy" "config" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "AWSConfigBucketPermissionsCheck"
-        Effect = "Allow"
+        Sid       = "AWSConfigBucketPermissionsCheck"
+        Effect    = "Allow"
         Principal = { Service = "config.amazonaws.com" }
-        Action   = "s3:GetBucketAcl"
-        Resource = aws_s3_bucket.config.arn
+        Action    = "s3:GetBucketAcl"
+        Resource  = aws_s3_bucket.config.arn
       },
       {
-        Sid    = "AWSConfigBucketExistenceCheck"
-        Effect = "Allow"
+        Sid       = "AWSConfigBucketExistenceCheck"
+        Effect    = "Allow"
         Principal = { Service = "config.amazonaws.com" }
-        Action   = "s3:ListBucket"
-        Resource = aws_s3_bucket.config.arn
+        Action    = "s3:ListBucket"
+        Resource  = aws_s3_bucket.config.arn
       },
       {
-        Sid    = "AWSConfigBucketDelivery"
-        Effect = "Allow"
+        Sid       = "AWSConfigBucketDelivery"
+        Effect    = "Allow"
         Principal = { Service = "config.amazonaws.com" }
-        Action   = "s3:PutObject"
-        Resource = "${aws_s3_bucket.config.arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/Config/*"
+        Action    = "s3:PutObject"
+        Resource  = "${aws_s3_bucket.config.arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/Config/*"
         Condition = {
           StringEquals = { "s3:x-amz-acl" = "bucket-owner-full-control" }
         }

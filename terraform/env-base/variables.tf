@@ -70,8 +70,8 @@ variable "ec2_ami_id" {
 
 variable "system_node_instance_types" {
   description = "Override system node instance types. Leave null to auto-select based on region capability map (m5 or m6i)."
-  type    = list(string)
-  default = null
+  type        = list(string)
+  default     = null
 }
 
 variable "system_node_desired" {
@@ -89,8 +89,8 @@ variable "system_node_max" {
 
 variable "app_node_instance_types" {
   description = "Override app node instance types. Leave null to auto-select based on region capability map (m5 or m6i)."
-  type    = list(string)
-  default = null
+  type        = list(string)
+  default     = null
 }
 
 variable "app_node_desired" {
@@ -163,25 +163,25 @@ variable "tags" {
 variable "efs_throughput_mode" {
   description = "EFS throughput mode. Auto-set to 'bursting' for regions where elastic throughput is not available."
   type        = string
-  default     = null  # null = auto-detect from region_config
+  default     = null # null = auto-detect from region_config
 }
 
 variable "vpc_excluded_endpoints" {
   description = "VPC interface endpoint services to exclude (for regions missing specific endpoints)."
   type        = list(string)
-  default     = null  # null = auto-detect from region_config
+  default     = null # null = auto-detect from region_config
 }
 
 variable "enable_securityhub_standards" {
   description = "Enable SecurityHub CIS/FSBP standards. Auto-set to false for regions where not available."
   type        = bool
-  default     = null  # null = auto-detect from region_config
+  default     = null # null = auto-detect from region_config
 }
 
 variable "enable_guardduty_advanced" {
   description = "Enable GuardDuty Kubernetes + malware protection. Auto-set to false for regions where not available."
   type        = bool
-  default     = null  # null = auto-detect from region_config
+  default     = null # null = auto-detect from region_config
 }
 
 # ---------------------------------------------------------------------------
@@ -209,14 +209,14 @@ variable "enable_guardduty_advanced" {
 variable "modules" {
   description = "Fine-grained enable/disable flags for each infrastructure module."
   type = object({
-    alb        = optional(bool, true)   # Internet-facing ALB + ACM certificate
-    eks        = optional(bool, true)   # EKS cluster, node groups, ECR
-    ec2        = optional(bool, true)   # EC2 ASG for legacy VMs (IMDSv2, SSM, Inspector)
-    iam        = optional(bool, true)   # IRSA roles (autoscaler, ALB controller, Prometheus)
-    documentdb = optional(bool, true)   # DocumentDB cluster (MongoDB 5.0 API)
-    s3         = optional(bool, true)   # S3 app-data / backups / artifacts buckets
-    efs        = optional(bool, true)   # EFS shared storage (Kafka + app access points)
-    backup     = optional(bool, true)   # AWS Backup vault with Vault Lock
+    alb        = optional(bool, true) # Internet-facing ALB + ACM certificate
+    eks        = optional(bool, true) # EKS cluster, node groups, ECR
+    ec2        = optional(bool, true) # EC2 ASG for legacy VMs (IMDSv2, SSM, Inspector)
+    iam        = optional(bool, true) # IRSA roles (autoscaler, ALB controller, Prometheus)
+    documentdb = optional(bool, true) # DocumentDB cluster (MongoDB 5.0 API)
+    s3         = optional(bool, true) # S3 app-data / backups / artifacts buckets
+    efs        = optional(bool, true) # EFS shared storage (Kafka + app access points)
+    backup     = optional(bool, true) # AWS Backup vault with Vault Lock
   })
-  default = {}   # all modules enabled by default
+  default = {} # all modules enabled by default
 }

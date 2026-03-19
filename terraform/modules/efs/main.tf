@@ -45,8 +45,8 @@ resource "aws_security_group" "efs" {
 # ---------------------------------------------------------------------------
 resource "aws_efs_file_system" "this" {
   creation_token   = "${var.project}-${var.environment}-efs"
-  performance_mode = var.performance_mode    # generalPurpose | maxIO
-  throughput_mode  = var.throughput_mode     # bursting | provisioned | elastic
+  performance_mode = var.performance_mode # generalPurpose | maxIO
+  throughput_mode  = var.throughput_mode  # bursting | provisioned | elastic
   encrypted        = true
   kms_key_id       = var.kms_key_arn
 
@@ -163,8 +163,8 @@ resource "aws_efs_file_system_policy" "this" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "EnforceInTransitEncryption"
-        Effect = "Deny"
+        Sid       = "EnforceInTransitEncryption"
+        Effect    = "Deny"
         Principal = { AWS = "*" }
         Action    = "*"
         Resource  = aws_efs_file_system.this.arn

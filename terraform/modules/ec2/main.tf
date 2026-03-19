@@ -118,11 +118,11 @@ resource "aws_security_group" "ec2" {
   }
 
   ingress {
-    description     = "Node-to-node (internal)"
-    from_port       = 0
-    to_port         = 0
-    protocol        = "-1"
-    self            = true
+    description = "Node-to-node (internal)"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    self        = true
   }
 
   egress {
@@ -153,7 +153,7 @@ resource "aws_launch_template" "this" {
   # IMDSv2 – hop limit 1 prevents container metadata leakage
   metadata_options {
     http_endpoint               = "enabled"
-    http_tokens                 = "required"   # IMDSv2 mandatory
+    http_tokens                 = "required" # IMDSv2 mandatory
     http_put_response_hop_limit = 1
     instance_metadata_tags      = "enabled"
   }
@@ -180,7 +180,7 @@ resource "aws_launch_template" "this" {
   }
 
   monitoring {
-    enabled = true   # Detailed CloudWatch monitoring
+    enabled = true # Detailed CloudWatch monitoring
   }
 
   user_data = base64encode(templatefile("${path.module}/userdata.sh.tpl", {
@@ -216,10 +216,10 @@ resource "aws_launch_template" "this" {
 # Auto Scaling Group
 # ---------------------------------------------------------------------------
 resource "aws_autoscaling_group" "this" {
-  name                = "${var.project}-${var.environment}-asg"
-  vpc_zone_identifier = var.private_subnet_ids
-  target_group_arns   = var.target_group_arns
-  health_check_type   = "ELB"
+  name                      = "${var.project}-${var.environment}-asg"
+  vpc_zone_identifier       = var.private_subnet_ids
+  target_group_arns         = var.target_group_arns
+  health_check_type         = "ELB"
   health_check_grace_period = 120
 
   min_size         = var.asg_min_size
@@ -284,7 +284,7 @@ resource "aws_ssm_patch_baseline" "amazon_linux" {
 
 resource "aws_ssm_maintenance_window" "this" {
   name     = "${var.project}-${var.environment}-patch-window"
-  schedule = "cron(0 2 ? * SUN *)"   # Sundays 2 AM UTC
+  schedule = "cron(0 2 ? * SUN *)" # Sundays 2 AM UTC
   duration = 3
   cutoff   = 1
 

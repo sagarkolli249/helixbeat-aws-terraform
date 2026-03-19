@@ -60,22 +60,22 @@ module "helixbeat" {
   modules = {}
 }
 
-output "vpc_id"                    { value = module.helixbeat.vpc_id }
-output "enabled_modules"           { value = module.helixbeat.enabled_modules }
-output "route53_name_servers"      { value = module.helixbeat.route53_name_servers }
-output "cluster_name"              { value = module.helixbeat.cluster_name }
-output "kubeconfig_command"        { value = module.helixbeat.kubeconfig_command }
-output "alb_dns_name"              { value = module.helixbeat.alb_dns_name }
+output "vpc_id" { value = module.helixbeat.vpc_id }
+output "enabled_modules" { value = module.helixbeat.enabled_modules }
+output "route53_name_servers" { value = module.helixbeat.route53_name_servers }
+output "cluster_name" { value = module.helixbeat.cluster_name }
+output "kubeconfig_command" { value = module.helixbeat.kubeconfig_command }
+output "alb_dns_name" { value = module.helixbeat.alb_dns_name }
 output "documentdb_endpoint" {
   value     = module.helixbeat.documentdb_endpoint
   sensitive = true
 }
-output "documentdb_secret_arn"     { value = module.helixbeat.documentdb_secret_arn }
-output "s3_app_data_bucket"        { value = module.helixbeat.s3_app_data_bucket }
-output "s3_backups_bucket"         { value = module.helixbeat.s3_backups_bucket }
-output "monitoring_bucket_name"    { value = module.helixbeat.monitoring_bucket_name }
-output "efs_file_system_id"        { value = module.helixbeat.efs_file_system_id }
+output "documentdb_secret_arn" { value = module.helixbeat.documentdb_secret_arn }
+output "s3_app_data_bucket" { value = module.helixbeat.s3_app_data_bucket }
+output "s3_backups_bucket" { value = module.helixbeat.s3_backups_bucket }
+output "monitoring_bucket_name" { value = module.helixbeat.monitoring_bucket_name }
+output "efs_file_system_id" { value = module.helixbeat.efs_file_system_id }
 output "efs_kafka_access_point_id" { value = module.helixbeat.efs_kafka_access_point_id }
-output "backup_vault_name"         { value = module.helixbeat.backup_vault_name }
-output "guardduty_detector_id"     { value = module.helixbeat.guardduty_detector_id }
-output "general_kms_key_arn"       { value = module.helixbeat.general_kms_key_arn }
+output "backup_vault_name" { value = module.helixbeat.backup_vault_name }
+output "guardduty_detector_id" { value = module.helixbeat.guardduty_detector_id }
+output "general_kms_key_arn" { value = module.helixbeat.general_kms_key_arn }

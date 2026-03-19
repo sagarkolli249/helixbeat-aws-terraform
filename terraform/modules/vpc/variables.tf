@@ -42,7 +42,7 @@ variable "interface_endpoints" {
     Override per country to drop services not yet available in a region.
     Full list available: https://docs.aws.amazon.com/vpc/latest/privatelink/aws-services-privatelink-support.html
   EOT
-  type    = list(string)
+  type        = list(string)
   default = [
     "ecr.api",
     "ecr.dkr",
@@ -63,6 +63,6 @@ variable "excluded_endpoints" {
     specific VPC endpoint services are not yet available (e.g. ap-southeast-5,
     me-central-1 may be missing elasticloadbalancing or autoscaling).
   EOT
-  type    = list(string)
-  default = []
+  type        = list(string)
+  default     = []
 }

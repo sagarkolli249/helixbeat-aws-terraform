@@ -136,10 +136,10 @@ resource "aws_security_group" "nodes" {
   vpc_id      = var.vpc_id
 
   ingress {
-    from_port = 0
-    to_port   = 0
-    protocol  = "-1"
-    self      = true
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    self        = true
     description = "Allow all node-to-node traffic"
   }
 
@@ -174,7 +174,7 @@ resource "aws_eks_cluster" "this" {
     subnet_ids              = var.private_subnet_ids
     security_group_ids      = [aws_security_group.cluster.id]
     endpoint_private_access = true
-    endpoint_public_access  = false   # hardened: API server accessible only from VPC
+    endpoint_public_access  = false # hardened: API server accessible only from VPC
   }
 
   encryption_config {

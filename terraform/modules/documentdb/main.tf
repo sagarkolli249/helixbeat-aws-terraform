@@ -175,7 +175,7 @@ resource "aws_docdb_cluster_instance" "this" {
   cluster_identifier = aws_docdb_cluster.this.id
   instance_class     = var.instance_class
 
-  auto_minor_version_upgrade = true
+  auto_minor_version_upgrade  = true
   enable_performance_insights = var.enable_performance_insights
 
   tags = merge(var.tags, {
@@ -199,7 +199,7 @@ resource "aws_cloudwatch_metric_alarm" "cpu" {
   alarm_description   = "DocumentDB CPU above 80%"
   treat_missing_data  = "notBreaching"
 
-  dimensions = { DBClusterIdentifier = aws_docdb_cluster.this.cluster_identifier }
+  dimensions    = { DBClusterIdentifier = aws_docdb_cluster.this.cluster_identifier }
   alarm_actions = var.alarm_sns_topic_arns
   tags          = var.tags
 }
@@ -212,7 +212,7 @@ resource "aws_cloudwatch_metric_alarm" "free_storage" {
   namespace           = "AWS/DocDB"
   period              = 300
   statistic           = "Average"
-  threshold           = 5368709120   # 5 GB in bytes
+  threshold           = 5368709120 # 5 GB in bytes
   alarm_description   = "DocumentDB free storage below 5 GB"
   treat_missing_data  = "notBreaching"
 

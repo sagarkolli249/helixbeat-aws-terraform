@@ -67,7 +67,7 @@ resource "aws_lb" "this" {
   enable_deletion_protection       = var.enable_deletion_protection
   enable_cross_zone_load_balancing = true
   enable_http2                     = true
-  drop_invalid_header_fields       = true   # Security: drop malformed headers
+  drop_invalid_header_fields       = true # Security: drop malformed headers
 
   access_logs {
     bucket  = var.access_logs_bucket
@@ -86,7 +86,7 @@ resource "aws_lb_target_group" "default" {
   port        = 80
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
-  target_type = "ip"   # Required for EKS pod-level routing
+  target_type = "ip" # Required for EKS pod-level routing
 
   health_check {
     enabled             = true
@@ -129,7 +129,7 @@ resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.this.arn
   port              = 443
   protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"   # TLS 1.3 preferred, min 1.2
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06" # TLS 1.3 preferred, min 1.2
   certificate_arn   = var.acm_certificate_arn
 
   default_action {
@@ -173,7 +173,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"   # ALB logs require AES256, not KMS
+      sse_algorithm = "AES256" # ALB logs require AES256, not KMS
     }
   }
 }
@@ -201,8 +201,8 @@ resource "aws_s3_bucket_policy" "access_logs" {
         Principal = {
           Service = "delivery.logs.amazonaws.com"
         }
-        Action    = "s3:PutObject"
-        Resource  = "arn:aws:s3:::${var.access_logs_bucket}/${var.project}-${var.environment}-alb/AWSLogs/*"
+        Action   = "s3:PutObject"
+        Resource = "arn:aws:s3:::${var.access_logs_bucket}/${var.project}-${var.environment}-alb/AWSLogs/*"
         Condition = {
           StringEquals = { "s3:x-amz-acl" = "bucket-owner-full-control" }
         }
@@ -269,7 +269,7 @@ resource "aws_cloudwatch_metric_alarm" "target_response_time" {
   namespace           = "AWS/ApplicationELB"
   period              = 60
   statistic           = "p99"
-  threshold           = 2   # 2 second p99
+  threshold           = 2 # 2 second p99
   alarm_description   = "ALB p99 latency above 2s"
   treat_missing_data  = "notBreaching"
 

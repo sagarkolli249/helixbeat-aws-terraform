@@ -43,22 +43,22 @@ locals {
   # exclusions. Add a new entry when onboarding a new AWS region.
   region_defaults = {
     # Mature / full-featured regions
-    "us-east-1"      = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic",  sh_standards = true,  gd_advanced = true,  excl_ep = [] }
-    "us-east-2"      = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic",  sh_standards = true,  gd_advanced = true,  excl_ep = [] }
-    "us-west-1"      = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic",  sh_standards = true,  gd_advanced = true,  excl_ep = [] }
-    "us-west-2"      = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic",  sh_standards = true,  gd_advanced = true,  excl_ep = [] }
-    "eu-west-1"      = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic",  sh_standards = true,  gd_advanced = true,  excl_ep = [] }
-    "eu-west-2"      = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic",  sh_standards = true,  gd_advanced = true,  excl_ep = [] }
-    "eu-central-1"   = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic",  sh_standards = true,  gd_advanced = true,  excl_ep = [] }
-    "ap-southeast-1" = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic",  sh_standards = true,  gd_advanced = true,  excl_ep = [] }
-    "ap-southeast-2" = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic",  sh_standards = true,  gd_advanced = true,  excl_ep = [] }
-    "ap-south-1"     = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic",  sh_standards = true,  gd_advanced = true,  excl_ep = [] }
-    "ap-northeast-1" = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic",  sh_standards = true,  gd_advanced = true,  excl_ep = [] }
-    "ca-central-1"   = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic",  sh_standards = true,  gd_advanced = true,  excl_ep = [] }
+    "us-east-1"      = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic", sh_standards = true, gd_advanced = true, excl_ep = [] }
+    "us-east-2"      = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic", sh_standards = true, gd_advanced = true, excl_ep = [] }
+    "us-west-1"      = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic", sh_standards = true, gd_advanced = true, excl_ep = [] }
+    "us-west-2"      = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic", sh_standards = true, gd_advanced = true, excl_ep = [] }
+    "eu-west-1"      = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic", sh_standards = true, gd_advanced = true, excl_ep = [] }
+    "eu-west-2"      = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic", sh_standards = true, gd_advanced = true, excl_ep = [] }
+    "eu-central-1"   = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic", sh_standards = true, gd_advanced = true, excl_ep = [] }
+    "ap-southeast-1" = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic", sh_standards = true, gd_advanced = true, excl_ep = [] }
+    "ap-southeast-2" = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic", sh_standards = true, gd_advanced = true, excl_ep = [] }
+    "ap-south-1"     = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic", sh_standards = true, gd_advanced = true, excl_ep = [] }
+    "ap-northeast-1" = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic", sh_standards = true, gd_advanced = true, excl_ep = [] }
+    "ca-central-1"   = { instance_family = "m5", docdb_class = "db.r6g", efs_mode = "elastic", sh_standards = true, gd_advanced = true, excl_ep = [] }
     # Newer / smaller regions – limited service availability
-    "af-south-1"     = { instance_family = "m6i", docdb_class = "db.r5", efs_mode = "elastic",  sh_standards = false, gd_advanced = false, excl_ep = ["autoscaling"] }
-    "me-central-1"   = { instance_family = "m6i", docdb_class = "db.r5", efs_mode = "elastic",  sh_standards = false, gd_advanced = false, excl_ep = ["autoscaling"] }
-    "ap-southeast-3" = { instance_family = "m6i", docdb_class = "db.r5", efs_mode = "elastic",  sh_standards = false, gd_advanced = false, excl_ep = [] }
+    "af-south-1"     = { instance_family = "m6i", docdb_class = "db.r5", efs_mode = "elastic", sh_standards = false, gd_advanced = false, excl_ep = ["autoscaling"] }
+    "me-central-1"   = { instance_family = "m6i", docdb_class = "db.r5", efs_mode = "elastic", sh_standards = false, gd_advanced = false, excl_ep = ["autoscaling"] }
+    "ap-southeast-3" = { instance_family = "m6i", docdb_class = "db.r5", efs_mode = "elastic", sh_standards = false, gd_advanced = false, excl_ep = [] }
     "ap-southeast-5" = { instance_family = "m6i", docdb_class = "db.r5", efs_mode = "bursting", sh_standards = false, gd_advanced = false, excl_ep = ["autoscaling", "elasticloadbalancing"] }
   }
 
@@ -74,13 +74,13 @@ locals {
 
   region_instance_family = local._rc.instance_family
   region_docdb_class     = local._rc.docdb_class
-  region_efs_mode        = var.efs_throughput_mode != null        ? var.efs_throughput_mode        : local._rc.efs_mode
+  region_efs_mode        = var.efs_throughput_mode != null ? var.efs_throughput_mode : local._rc.efs_mode
   region_sh_standards    = var.enable_securityhub_standards != null ? var.enable_securityhub_standards : local._rc.sh_standards
-  region_gd_advanced     = var.enable_guardduty_advanced != null    ? var.enable_guardduty_advanced    : local._rc.gd_advanced
-  region_excl_ep         = var.vpc_excluded_endpoints != null       ? var.vpc_excluded_endpoints       : local._rc.excl_ep
+  region_gd_advanced     = var.enable_guardduty_advanced != null ? var.enable_guardduty_advanced : local._rc.gd_advanced
+  region_excl_ep         = var.vpc_excluded_endpoints != null ? var.vpc_excluded_endpoints : local._rc.excl_ep
 
   system_node_types = var.system_node_instance_types != null ? var.system_node_instance_types : ["${local.region_instance_family}.large"]
-  app_node_types    = var.app_node_instance_types    != null ? var.app_node_instance_types    : ["${local.region_instance_family}.large"]
+  app_node_types    = var.app_node_instance_types != null ? var.app_node_instance_types : ["${local.region_instance_family}.large"]
 
   # ── Safe cross-module output references ───────────────────────────────────
   # When a module is disabled (count = 0), these resolve to safe fallback
@@ -89,33 +89,33 @@ locals {
   #
   safe = {
     # ALB / ACM
-    acm_cert_arn    = try(one(module.acm[*].certificate_arn), "")
-    alb_dns         = try(one(module.alb[*].alb_dns_name), "")
-    alb_zone        = try(one(module.alb[*].alb_zone_id), "")
-    alb_sg          = try(one(module.alb[*].security_group_id), "")
-    alb_tg_arn      = try(one(module.alb[*].default_target_group_arn), "")
+    acm_cert_arn = try(one(module.acm[*].certificate_arn), "")
+    alb_dns      = try(one(module.alb[*].alb_dns_name), "")
+    alb_zone     = try(one(module.alb[*].alb_zone_id), "")
+    alb_sg       = try(one(module.alb[*].security_group_id), "")
+    alb_tg_arn   = try(one(module.alb[*].default_target_group_arn), "")
 
     # EKS
-    eks_oidc_arn    = try(one(module.eks[*].oidc_provider_arn), "")
-    eks_oidc_url    = try(one(module.eks[*].cluster_oidc_issuer_url), "")
-    eks_node_sg     = try(one(module.eks[*].node_security_group_id), "")
+    eks_oidc_arn = try(one(module.eks[*].oidc_provider_arn), "")
+    eks_oidc_url = try(one(module.eks[*].cluster_oidc_issuer_url), "")
+    eks_node_sg  = try(one(module.eks[*].node_security_group_id), "")
 
     # IAM
     iam_monitor_arn = try(one(module.iam[*].monitoring_role_arn), "")
     iam_monitor_bkt = try(one(module.iam[*].monitoring_bucket_name), "")
 
     # EC2
-    ec2_sg          = try(one(module.ec2[*].security_group_id), "")
-    ec2_role_arn    = try(one(module.ec2[*].instance_role_arn), "")
+    ec2_sg       = try(one(module.ec2[*].security_group_id), "")
+    ec2_role_arn = try(one(module.ec2[*].instance_role_arn), "")
 
     # DocumentDB
-    docdb_endpoint  = try(one(module.documentdb[*].cluster_endpoint), "")
-    docdb_id        = try(one(module.documentdb[*].cluster_id), "")
+    docdb_endpoint = try(one(module.documentdb[*].cluster_endpoint), "")
+    docdb_id       = try(one(module.documentdb[*].cluster_id), "")
 
     # EFS
-    efs_arn         = try(one(module.efs[*].file_system_arn), "")
-    efs_id          = try(one(module.efs[*].file_system_id), "")
-    efs_kafka_ap    = try(one(module.efs[*].kafka_access_point_id), "")
+    efs_arn      = try(one(module.efs[*].file_system_arn), "")
+    efs_id       = try(one(module.efs[*].file_system_id), "")
+    efs_kafka_ap = try(one(module.efs[*].kafka_access_point_id), "")
   }
 }
 
@@ -130,14 +130,14 @@ locals {
 module "vpc" {
   source = "../modules/vpc"
 
-  project              = "helixbeat"
-  environment          = "${var.environment}-${var.country_code}"
-  aws_region           = var.aws_region
-  vpc_cidr             = var.vpc_cidr
-  availability_zones   = var.availability_zones
-  cluster_name         = local.cluster_name
-  excluded_endpoints   = local.region_excl_ep
-  tags                 = local.common_tags
+  project            = "helixbeat"
+  environment        = "${var.environment}-${var.country_code}"
+  aws_region         = var.aws_region
+  vpc_cidr           = var.vpc_cidr
+  availability_zones = var.availability_zones
+  cluster_name       = local.cluster_name
+  excluded_endpoints = local.region_excl_ep
+  tags               = local.common_tags
 }
 
 # -----------------------------------------------------------------------------
@@ -146,14 +146,14 @@ module "vpc" {
 module "security" {
   source = "../modules/security"
 
-  environment                        = "${var.environment}-${var.country_code}"
-  alert_email_addresses              = var.alert_email_addresses
-  alarm_sns_topic_arns               = []
-  enable_securityhub_cis_standard    = local.region_sh_standards
-  enable_securityhub_fsbp_standard   = local.region_sh_standards
-  enable_guardduty_kubernetes        = local.region_gd_advanced
+  environment                         = "${var.environment}-${var.country_code}"
+  alert_email_addresses               = var.alert_email_addresses
+  alarm_sns_topic_arns                = []
+  enable_securityhub_cis_standard     = local.region_sh_standards
+  enable_securityhub_fsbp_standard    = local.region_sh_standards
+  enable_guardduty_kubernetes         = local.region_gd_advanced
   enable_guardduty_malware_protection = local.region_gd_advanced
-  tags                               = local.common_tags
+  tags                                = local.common_tags
 }
 
 # -----------------------------------------------------------------------------

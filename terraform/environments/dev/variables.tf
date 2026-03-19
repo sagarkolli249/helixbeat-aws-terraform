@@ -39,5 +39,5 @@ variable "domain_name" {
 variable "ec2_ami_id" {
   description = "Amazon Linux 2 AMI ID for EC2 instances (region-specific)"
   type        = string
-  default     = "ami-0c02fb55956c7d316"  # Amazon Linux 2 us-east-1 – update per region
+  default     = "ami-0c02fb55956c7d316" # Amazon Linux 2 us-east-1 – update per region
 }

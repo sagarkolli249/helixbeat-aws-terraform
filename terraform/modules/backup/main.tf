@@ -32,9 +32,9 @@ resource "aws_backup_vault" "this" {
 # ---------------------------------------------------------------------------
 resource "aws_backup_vault_lock_configuration" "this" {
   backup_vault_name   = aws_backup_vault.this.name
-  changeable_for_days = 3       # 3 days to reconfigure before lock is permanent
+  changeable_for_days = 3 # 3 days to reconfigure before lock is permanent
   min_retention_days  = 35
-  max_retention_days  = 2555    # 7 years maximum
+  max_retention_days  = 2555 # 7 years maximum
 }
 
 # ---------------------------------------------------------------------------
@@ -82,12 +82,12 @@ resource "aws_backup_plan" "daily" {
   rule {
     rule_name         = "daily-35d"
     target_vault_name = aws_backup_vault.this.name
-    schedule          = "cron(0 3 * * ? *)"   # 3 AM UTC daily
+    schedule          = "cron(0 3 * * ? *)" # 3 AM UTC daily
     start_window      = 60
     completion_window = 180
 
     lifecycle {
-      cold_storage_after = 30   # Move to cold storage after 30 days
+      cold_storage_after = 30 # Move to cold storage after 30 days
       delete_after       = 35
     }
 
@@ -102,7 +102,7 @@ resource "aws_backup_plan" "daily" {
   rule {
     rule_name         = "weekly-90d"
     target_vault_name = aws_backup_vault.this.name
-    schedule          = "cron(0 4 ? * 1 *)"   # Every Sunday 4 AM UTC
+    schedule          = "cron(0 4 ? * 1 *)" # Every Sunday 4 AM UTC
     start_window      = 60
     completion_window = 360
 
@@ -115,7 +115,7 @@ resource "aws_backup_plan" "daily" {
   rule {
     rule_name         = "monthly-1yr"
     target_vault_name = aws_backup_vault.this.name
-    schedule          = "cron(0 5 1 * ? *)"   # 1st of each month 5 AM UTC
+    schedule          = "cron(0 5 1 * ? *)" # 1st of each month 5 AM UTC
     start_window      = 60
     completion_window = 480
 
@@ -168,8 +168,8 @@ resource "aws_backup_selection" "efs" {
 # SNS notifications for backup job status
 # ---------------------------------------------------------------------------
 resource "aws_backup_vault_notifications" "this" {
-  backup_vault_name   = aws_backup_vault.this.name
-  sns_topic_arn       = var.alarm_sns_topic_arn
+  backup_vault_name = aws_backup_vault.this.name
+  sns_topic_arn     = var.alarm_sns_topic_arn
   backup_vault_events = [
     "BACKUP_JOB_FAILED",
     "RESTORE_JOB_FAILED",

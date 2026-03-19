@@ -23,9 +23,9 @@ data "aws_caller_identity" "current" {}
 locals {
   buckets = {
     app-data = {
-      description     = "Application data (primary object store)"
-      object_lock     = false
-      versioning      = true
+      description      = "Application data (primary object store)"
+      object_lock      = false
+      versioning       = true
       intelligent_tier = true
     }
     backups = {
@@ -87,7 +87,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
       sse_algorithm     = "aws:kms"
       kms_master_key_id = var.kms_key_arn
     }
-    bucket_key_enabled = true   # Reduces KMS API calls (cost optimization)
+    bucket_key_enabled = true # Reduces KMS API calls (cost optimization)
   }
 }
 
@@ -169,7 +169,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "backups" {
     }
 
     expiration {
-      days = 2555   # 7 years
+      days = 2555 # 7 years
     }
   }
 }
@@ -214,10 +214,10 @@ resource "aws_s3_bucket_policy" "this" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "DenyNonHTTPS"
-        Effect = "Deny"
+        Sid       = "DenyNonHTTPS"
+        Effect    = "Deny"
         Principal = { AWS = "*" }
-        Action   = "s3:*"
+        Action    = "s3:*"
         Resource = [
           aws_s3_bucket.this[each.key].arn,
           "${aws_s3_bucket.this[each.key].arn}/*"
@@ -227,11 +227,11 @@ resource "aws_s3_bucket_policy" "this" {
         }
       },
       {
-        Sid    = "DenyUnencryptedPut"
-        Effect = "Deny"
+        Sid       = "DenyUnencryptedPut"
+        Effect    = "Deny"
         Principal = { AWS = "*" }
-        Action   = "s3:PutObject"
-        Resource = "${aws_s3_bucket.this[each.key].arn}/*"
+        Action    = "s3:PutObject"
+        Resource  = "${aws_s3_bucket.this[each.key].arn}/*"
         Condition = {
           StringNotEquals = {
             "s3:x-amz-server-side-encryption" = "aws:kms"
@@ -239,8 +239,8 @@ resource "aws_s3_bucket_policy" "this" {
         }
       },
       {
-        Sid    = "AllowEKSAndEC2Access"
-        Effect = "Allow"
+        Sid       = "AllowEKSAndEC2Access"
+        Effect    = "Allow"
         Principal = { AWS = var.allowed_role_arns }
         Action = [
           "s3:GetObject",
@@ -273,8 +273,8 @@ resource "aws_vpc_endpoint_policy" "s3" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "AllowHelixBeatBuckets"
-        Effect = "Allow"
+        Sid       = "AllowHelixBeatBuckets"
+        Effect    = "Allow"
         Principal = { AWS = "*" }
         Action = [
           "s3:GetObject",
@@ -293,11 +293,11 @@ resource "aws_vpc_endpoint_policy" "s3" {
         # Uses a prefix pattern instead of region-hardcoded names so this policy works
         # in all regions including newer ones (af-south-1, me-central-1, ap-southeast-5)
         # where the starport / amazonlinux bucket names differ or may not exist.
-        Sid    = "AllowAWSServiceBuckets"
-        Effect = "Allow"
+        Sid       = "AllowAWSServiceBuckets"
+        Effect    = "Allow"
         Principal = { AWS = "*" }
         Action    = ["s3:GetObject"]
-        Resource  = [
+        Resource = [
           "arn:aws:s3:::prod-*-starport-layer-bucket/*",
           "arn:aws:s3:::amazonlinux-2-repos-*/*",
           "arn:aws:s3:::amazonlinux.*amazonaws.com/*",
