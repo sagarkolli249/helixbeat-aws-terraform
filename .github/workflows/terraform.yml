@@ -221,6 +221,16 @@ jobs:
             exit 1
           fi
 
+      - name: Upload Infracost artifact for cost-gate
+        if: env.INFRACOST_API_KEY != '' && steps.infracost.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: infracost-${{ env.TF_ENV }}
+          path: /tmp/infracost-${{ env.TF_ENV }}.json
+          retention-days: 1
+        env:
+          INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+
       - name: Cost estimate skipped (no API key)
         if: env.INFRACOST_API_KEY == ''
         env:
@@ -261,18 +271,113 @@ jobs:
         env:
           MONTHLY_DELTA: ${{ steps.infracost.outputs.monthly-delta }}
 
+  # ── Cost Gate – aggregate costs across all envs, post to commit, block apply ──
+  cost-gate:
+    name: "Cost Gate — review before approving apply"
+    runs-on: ubuntu-latest
+    needs: [changed-envs, plan]
+    if: >
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')
+    steps:
+      - name: Download all Infracost artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: infracost-*
+          path: /tmp/infracost-results
+          merge-multiple: false
+        continue-on-error: true
+
+      - name: Build cost summary and post commit comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs   = require('fs');
+            const path = require('path');
+
+            const resultsDir = '/tmp/infracost-results';
+            const files = fs.existsSync(resultsDir)
+              ? fs.readdirSync(resultsDir, { withFileTypes: true })
+                  .filter(d => d.isDirectory())
+                  .flatMap(d => {
+                    const dir = path.join(resultsDir, d.name);
+                    return fs.readdirSync(dir)
+                      .filter(f => f.endsWith('.json'))
+                      .map(f => ({ env: d.name.replace(/^infracost-/, ''), file: path.join(dir, f) }));
+                  })
+              : [];
+
+            if (files.length === 0) {
+              core.summary.addRaw('## 💰 Cost Gate\nNo Infracost data found (API key not set or plan had no changes).\n');
+              await core.summary.write();
+              return;
+            }
+
+            let tableRows = [];
+            let totalCost  = 0;
+            let totalDelta = 0;
+
+            for (const { env, file } of files) {
+              const data  = JSON.parse(fs.readFileSync(file, 'utf8'));
+              const cost  = parseFloat(data.totalMonthlyCost  || 0);
+              const delta = parseFloat(data.diffTotalMonthlyCost || 0);
+              totalCost  += cost;
+              totalDelta += delta;
+              const sign  = delta >= 0 ? '+' : '';
+              tableRows.push([env, `$${cost.toFixed(2)}`, `${sign}$${delta.toFixed(2)}`]);
+            }
+
+            const sign = totalDelta >= 0 ? '+' : '';
+
+            // ── Job Summary (visible in the cost-gate job page) ───────────────
+            core.summary
+              .addHeading('💰 Cost Gate — Review Before Approving Apply', 2)
+              .addTable([
+                [{ data: 'Environment', header: true },
+                 { data: 'Monthly Cost', header: true },
+                 { data: 'Delta vs Current', header: true }],
+                ...tableRows,
+                ['**TOTAL**', `**$${totalCost.toFixed(2)}**`, `**${sign}$${totalDelta.toFixed(2)}**`]
+              ])
+              .addRaw(`\n> ⚠️ Approve the apply jobs below only if the cost delta is acceptable.\n`)
+              .addRaw(`> 🔗 [View full workflow run](${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID})\n`);
+            await core.summary.write();
+
+            // ── Commit comment (visible on the SHA in GitHub) ─────────────────
+            const rows = tableRows.map(([e, c, d]) => `| ${e} | ${c} | ${d} |`).join('\n');
+            const body = [
+              `## 💰 Terraform Cost Estimate`,
+              ``,
+              `| Environment | Monthly Cost | Delta |`,
+              `|-------------|-------------|-------|`,
+              rows,
+              `| **TOTAL** | **$${totalCost.toFixed(2)}** | **${sign}$${totalDelta.toFixed(2)}** |`,
+              ``,
+              `> Approve the \`terraform-*\` environments below to proceed with apply.`,
+              `> Run: [${process.env.GITHUB_RUN_ID}](${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID})`
+            ].join('\n');
+
+            await github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              commit_sha: context.sha,
+              body
+            });
+
   # ── Terraform Apply (main branch only, post-PR-approval) ─────────────────────
   apply:
     name: Apply [${{ matrix.environment }}]
     runs-on: ubuntu-latest
-    needs: [changed-envs, plan]
+    needs: [changed-envs, plan, cost-gate]
     if: >
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')
     strategy:
       max-parallel: 1   # no concurrent applies across envs
       matrix: ${{ fromJSON(needs.changed-envs.outputs.matrix) }}
-    environment: terraform-${{ matrix.environment }}   # requires reviewer approval in GitHub Environments
+    environment:
+      name: terraform-${{ matrix.environment }}   # requires reviewer approval in GitHub Environments
+      url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     env:
       TF_ENV: ${{ matrix.environment }}
     steps:
