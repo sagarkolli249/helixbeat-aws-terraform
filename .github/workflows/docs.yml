@@ -9,13 +9,12 @@ name: Documentation Pipeline
 on:
   push:
     branches: [main]
+    tags: ["v*.*.*"]
     paths:
       - "terraform/**"
       - "docs/**"
       - "kubernetes/**"
       - ".github/workflows/**"
-  push:
-    tags: ["v*.*.*"]
   workflow_dispatch:
 
 permissions:

@@ -19,11 +19,10 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
   IMAGE_NAME: helixbeat-app
   EKS_CLUSTER_STAGING: helixbeat-staging-us
   EKS_CLUSTER_PROD: helixbeat-prod-us
-  JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+  # ECR_REGISTRY and JIRA_BASE_URL use secrets so they are set at job level
 
 permissions:
   id-token: write   # IRSA / OIDC auth to AWS
@@ -36,6 +35,8 @@ jobs:
   build:
     name: Build & Push to ECR
     runs-on: ubuntu-latest
+    env:
+      ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
     outputs:
       image-tag: ${{ steps.meta.outputs.image-tag }}
       image-uri: ${{ steps.push.outputs.image-uri }}
@@ -143,6 +144,8 @@ jobs:
     name: Security Scan (Snyk + Trivy + OWASP ZAP)
     runs-on: ubuntu-latest
     needs: build
+    env:
+      ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
     steps:
       - uses: actions/checkout@v4
 
