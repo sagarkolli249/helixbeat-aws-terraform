@@ -101,7 +101,7 @@ resource "aws_kms_alias" "general" {
 # ---------------------------------------------------------------------------
 resource "aws_s3_bucket" "cloudtrail" {
   bucket        = "helixbeat-${var.environment}-cloudtrail-${data.aws_caller_identity.current.account_id}"
-  force_destroy = false
+  force_destroy = true
 
   tags = merge(var.tags, { Name = "helixbeat-${var.environment}-cloudtrail" })
 }
@@ -316,7 +316,7 @@ resource "aws_securityhub_standards_subscription" "aws_best_practices" {
 # ---------------------------------------------------------------------------
 resource "aws_s3_bucket" "config" {
   bucket        = "helixbeat-${var.environment}-config-${data.aws_caller_identity.current.account_id}"
-  force_destroy = false
+  force_destroy = true
 
   tags = merge(var.tags, { Name = "helixbeat-${var.environment}-config" })
 }
