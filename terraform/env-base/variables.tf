@@ -74,9 +74,18 @@ variable "system_node_instance_types" {
   default = null
 }
 
-variable "system_node_desired" { type = number; default = 2 }
-variable "system_node_min"     { type = number; default = 1 }
-variable "system_node_max"     { type = number; default = 3 }
+variable "system_node_desired" {
+  type    = number
+  default = 2
+}
+variable "system_node_min" {
+  type    = number
+  default = 1
+}
+variable "system_node_max" {
+  type    = number
+  default = 3
+}
 
 variable "app_node_instance_types" {
   description = "Override app node instance types. Leave null to auto-select based on region capability map (m5 or m6i)."
@@ -84,9 +93,18 @@ variable "app_node_instance_types" {
   default = null
 }
 
-variable "app_node_desired" { type = number; default = 1 }
-variable "app_node_min"     { type = number; default = 1 }
-variable "app_node_max"     { type = number; default = 5 }
+variable "app_node_desired" {
+  type    = number
+  default = 1
+}
+variable "app_node_min" {
+  type    = number
+  default = 1
+}
+variable "app_node_max" {
+  type    = number
+  default = 5
+}
 
 variable "documentdb_instance_class" {
   type    = string
@@ -103,11 +121,26 @@ variable "documentdb_deletion_protection" {
   default = false
 }
 
-variable "ec2_instance_type"        { type = string; default = "m5.large" }
-variable "ec2_root_volume_size_gb"  { type = number; default = 50 }
-variable "asg_min_size"             { type = number; default = 1 }
-variable "asg_max_size"             { type = number; default = 4 }
-variable "asg_desired_capacity"     { type = number; default = 1 }
+variable "ec2_instance_type" {
+  type    = string
+  default = "m5.large"
+}
+variable "ec2_root_volume_size_gb" {
+  type    = number
+  default = 50
+}
+variable "asg_min_size" {
+  type    = number
+  default = 1
+}
+variable "asg_max_size" {
+  type    = number
+  default = 4
+}
+variable "asg_desired_capacity" {
+  type    = number
+  default = 1
+}
 
 variable "alb_enable_deletion_protection" {
   type    = bool
