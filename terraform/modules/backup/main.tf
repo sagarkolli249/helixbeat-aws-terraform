@@ -142,15 +142,9 @@ resource "aws_backup_selection" "tagged_resources" {
   }
 }
 
-# Explicit selection for DocumentDB (tag-based backup doesn't always work)
-resource "aws_backup_selection" "documentdb" {
-  count        = length(var.documentdb_cluster_arns) > 0 ? 1 : 0
-  name         = "${var.project}-${var.environment}-documentdb"
-  iam_role_arn = aws_iam_role.backup.arn
-  plan_id      = aws_backup_plan.daily.id
-
-  resources = var.documentdb_cluster_arns
-}
+# NOTE: DocumentDB explicit selection removed – AWS Backup does not accept
+# arn:aws:docdb:... ARNs. DocumentDB clusters are covered by the tag-based
+# selection above (BackupPolicy = helixbeat-daily tag on the cluster).
 
 # Explicit selection for EFS
 resource "aws_backup_selection" "efs" {

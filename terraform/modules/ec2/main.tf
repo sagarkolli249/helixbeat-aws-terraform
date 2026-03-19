@@ -148,8 +148,6 @@ resource "aws_launch_template" "this" {
     arn = aws_iam_instance_profile.ec2.arn
   }
 
-  vpc_security_group_ids = [aws_security_group.ec2.id]
-
   # IMDSv2 – hop limit 1 prevents container metadata leakage
   metadata_options {
     http_endpoint               = "enabled"
