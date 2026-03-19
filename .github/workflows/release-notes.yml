@@ -1,0 +1,90 @@
+###############################################################################
+# HelixBeat – Jira-Linked Release Notes Pipeline
+#
+# Slide 6: Commit → Git Tag → Jira API Fetch → Generate Notes → Publish → Notify
+#
+# Triggers on every semantic version tag push (v*.*.*)
+###############################################################################
+name: Release Notes & Jira Automation
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release-notes:
+    name: Generate & Publish Release Notes
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests jinja2 boto3
+
+      - name: Generate Jira-linked changelog
+        id: changelog
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_USER: ${{ secrets.JIRA_USER_EMAIL }}
+          CURRENT_TAG: ${{ github.ref_name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/generate-release-notes.py
+
+      - name: Create GitHub Release with changelog
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "HelixBeat ${{ github.ref_name }}"
+          body_path: /tmp/release-notes.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}
+          generate_release_notes: false
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CI_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Publish JSON manifest to S3
+        run: |
+          aws s3 cp /tmp/release-manifest.json \
+            s3://${{ secrets.TF_STATE_BUCKET }}/releases/${{ github.ref_name }}/manifest.json \
+            --content-type application/json --sse aws:kms
+
+      - name: Publish to Confluence
+        env:
+          CONFLUENCE_BASE_URL: ${{ secrets.CONFLUENCE_BASE_URL }}
+          CONFLUENCE_TOKEN: ${{ secrets.CONFLUENCE_API_TOKEN }}
+          CONFLUENCE_SPACE: PLATFORM
+          CURRENT_TAG: ${{ github.ref_name }}
+        run: python scripts/publish-to-confluence.py
+
+      - name: Mark Jira version as Released
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_USER: ${{ secrets.JIRA_USER_EMAIL }}
+          CURRENT_TAG: ${{ github.ref_name }}
+        run: python scripts/jira-close-version.py
+
+      - name: Notify Teams #releases channel
+        uses: aliencube/microsoft-teams-actions@v0.8.0
+        with:
+          webhook_uri: ${{ secrets.TEAMS_RELEASES_WEBHOOK }}
+          title: "🚀 HelixBeat ${{ github.ref_name }} Released"
+          summary: "Release notes published to GitHub, Confluence & Jira"
+          theme_color: "28A745"

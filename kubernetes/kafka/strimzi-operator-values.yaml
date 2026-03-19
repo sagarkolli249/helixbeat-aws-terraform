@@ -1,0 +1,57 @@
+###############################################################################
+# Strimzi Kafka Operator Helm values
+# Chart: https://github.com/strimzi/strimzi-kafka-operator
+# Manages: Kafka cluster + ZooKeeper (or KRaft) + topics + users + connect
+#
+# Install:
+#   helm repo add strimzi https://strimzi.io/charts/
+#   helm upgrade --install strimzi-kafka-operator strimzi/strimzi-kafka-operator \
+#     --namespace kafka --create-namespace \
+#     -f strimzi-operator-values.yaml
+###############################################################################
+
+# Watch all namespaces (operator manages Kafka resources cluster-wide)
+watchNamespaces: []  # Empty = watch all namespaces
+
+# Operator deployment
+replicas: 2
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 384Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Security context
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: false   # Strimzi operator needs write access
+
+# Tolerations to run on system nodes
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: system
+    effect: NoSchedule
+
+nodeSelector:
+  role: system
+
+# Feature gates
+featureGates: ""
+
+# Image pull policy
+imagePullPolicy: IfNotPresent
+
+# Leader election (HA with 2 replicas)
+leaderElection:
+  enabled: true

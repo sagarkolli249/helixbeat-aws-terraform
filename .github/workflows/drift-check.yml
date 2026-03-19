@@ -1,0 +1,106 @@
+###############################################################################
+# HelixBeat – Terraform Drift Detection
+#
+# Slide 4: Scheduled daily EventBridge-equivalent via GitHub Actions cron.
+# Runs terraform plan --detailed-exitcode across all envs.
+# Exit code 2 = drift detected → opens Jira ticket + Teams alert.
+###############################################################################
+name: Terraform Drift Detection
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # 06:00 UTC daily
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+  issues: write
+
+jobs:
+  drift-check:
+    name: Drift Check [${{ matrix.environment }}]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev-us, dev-in, staging-us, staging-in]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TF_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Terraform init
+        working-directory: terraform/environments/${{ matrix.environment }}
+        run: terraform init -reconfigure
+
+      - name: Terraform plan (drift detection)
+        id: plan
+        working-directory: terraform/environments/${{ matrix.environment }}
+        run: |
+          terraform plan -detailed-exitcode -input=false 2>&1 | tee plan-output.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "exit-code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
+          if [[ $EXIT_CODE -eq 1 ]]; then
+            echo "::error::Terraform plan errored for ${{ matrix.environment }}"
+            exit 1
+          fi
+
+      - name: Save drift report to S3
+        if: steps.plan.outputs.exit-code == '2'
+        working-directory: terraform/environments/${{ matrix.environment }}
+        run: |
+          aws s3 cp plan-output.txt \
+            s3://${{ secrets.TF_STATE_BUCKET }}/drift/${{ matrix.environment }}/$(date +%Y-%m-%d)-drift.txt \
+            --sse aws:kms
+
+      - name: Create Jira ticket for drift
+        if: steps.plan.outputs.exit-code == '2'
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_USER: ${{ secrets.JIRA_USER_EMAIL }}
+          ENV_NAME: ${{ matrix.environment }}
+          DRIFT_DATE: ${{ github.run_id }}
+        run: |
+          PLAN_SNIPPET=$(head -50 terraform/environments/${{ matrix.environment }}/plan-output.txt)
+          curl -s -X POST "$JIRA_BASE_URL/rest/api/3/issue" \
+            -u "$JIRA_USER:$JIRA_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"fields\": {
+                \"project\": { \"key\": \"PLAT\" },
+                \"summary\": \"[DRIFT] Terraform drift detected in ${{ matrix.environment }} on $(date +%Y-%m-%d)\",
+                \"description\": {
+                  \"type\": \"doc\", \"version\": 1,
+                  \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\",
+                  \"text\": \"Automated drift detected. Review plan before applying.\\n\\n${PLAN_SNIPPET}\"}]}]
+                },
+                \"issuetype\": { \"name\": \"Task\" },
+                \"priority\": { \"name\": \"High\" },
+                \"labels\": [\"terraform-drift\", \"${{ matrix.environment }}\"]
+              }
+            }"
+
+      - name: Alert Teams on drift
+        if: steps.plan.outputs.exit-code == '2'
+        uses: aliencube/microsoft-teams-actions@v0.8.0
+        with:
+          webhook_uri: ${{ secrets.TEAMS_WEBHOOK }}
+          title: "⚠️ Terraform Drift Detected: ${{ matrix.environment }}"
+          summary: "Infrastructure has drifted from Terraform state. A Jira ticket has been created."
+          theme_color: "FFA500"
+
+      - name: No drift
+        if: steps.plan.outputs.exit-code == '0'
+        run: echo "✅ No drift detected for ${{ matrix.environment }}"

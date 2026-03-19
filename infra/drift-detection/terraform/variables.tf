@@ -1,0 +1,10 @@
+variable "environments"          { default = ["dev-us", "dev-in", "staging-us", "staging-in"] }
+variable "drift_s3_bucket_name"  { description = "S3 bucket for drift reports" }
+variable "drift_s3_bucket_arn"   { description = "ARN of the S3 drift bucket" }
+variable "tfstate_bucket_arn"    { description = "Terraform state S3 bucket ARN" }
+variable "tfstate_lock_table_arn"{ description = "DynamoDB state lock table ARN" }
+variable "tf_execution_role_arn" { description = "IAM role ARN that CodeBuild assumes to run terraform" }
+variable "kms_key_id"            { description = "KMS key for SNS encryption" }
+variable "alert_email"           { description = "Email address for drift alerts" }
+variable "github_org"            { default = "helixbeat" }
+variable "tags"                  { default = {} }

@@ -1,0 +1,200 @@
+###############################################################################
+# HelixBeat – AlertManager configuration
+#
+# Slide 8: AlertManager → PagerDuty / Microsoft Teams
+# Applied via: helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack
+#              -n monitoring -f kubernetes/monitoring/alertmanager/values.yaml
+###############################################################################
+
+alertmanager:
+  enabled: true
+  config:
+    global:
+      resolve_timeout: 5m
+      pagerduty_url: "https://events.pagerduty.com/v2/enqueue"
+
+    route:
+      group_by: [alertname, cluster, namespace, environment]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      receiver: teams-default
+      routes:
+        # Critical: EKS node not ready, RDS CPU > 80%, Kafka lag > 10k
+        - match:
+            severity: critical
+          receiver: pagerduty-critical
+          continue: true   # also notify Teams
+        - match:
+            severity: critical
+          receiver: teams-critical
+
+        # Warning: disk > 85%, ALB 5xx > 1%
+        - match:
+            severity: warning
+          receiver: teams-warning
+
+        # Info: deployments, scaling events
+        - match:
+            severity: info
+          receiver: teams-info
+
+    receivers:
+      # ── PagerDuty (critical only) ──────────────────────────────────────────
+      - name: pagerduty-critical
+        pagerduty_configs:
+          - service_key: "${PAGERDUTY_SERVICE_KEY}"
+            description: "{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}"
+            details:
+              cluster: "{{ .CommonLabels.cluster }}"
+              environment: "{{ .CommonLabels.environment }}"
+              namespace: "{{ .CommonLabels.namespace }}"
+              runbook: "{{ .CommonAnnotations.runbook_url }}"
+
+      # ── Microsoft Teams – critical ─────────────────────────────────────────
+      - name: teams-critical
+        webhook_configs:
+          - url: "${TEAMS_WEBHOOK_CRITICAL}"
+            send_resolved: true
+            http_config:
+              tls_config:
+                insecure_skip_verify: false
+            title: "🔴 CRITICAL: {{ .GroupLabels.alertname }}"
+            text: |
+              **Cluster:** {{ .CommonLabels.cluster }}
+              **Environment:** {{ .CommonLabels.environment }}
+              **Namespace:** {{ .CommonLabels.namespace }}
+              {{ range .Alerts }}
+              - **{{ .Annotations.summary }}**
+                {{ .Annotations.description }}
+                [Runbook]({{ .Annotations.runbook_url }})
+              {{ end }}
+
+      # ── Microsoft Teams – warning ──────────────────────────────────────────
+      - name: teams-warning
+        webhook_configs:
+          - url: "${TEAMS_WEBHOOK_ALERTS}"
+            send_resolved: true
+            title: "⚠️ WARNING: {{ .GroupLabels.alertname }}"
+            text: |
+              **Cluster:** {{ .CommonLabels.cluster }}
+              {{ range .Alerts }}- {{ .Annotations.summary }}{{ end }}
+
+      # ── Microsoft Teams – info / default ──────────────────────────────────
+      - name: teams-info
+        webhook_configs:
+          - url: "${TEAMS_WEBHOOK_ALERTS}"
+            send_resolved: true
+            title: "ℹ️ {{ .GroupLabels.alertname }}"
+            text: "{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}"
+
+      - name: teams-default
+        webhook_configs:
+          - url: "${TEAMS_WEBHOOK_ALERTS}"
+            send_resolved: true
+            title: "{{ .GroupLabels.alertname }}"
+            text: "{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}"
+
+    inhibit_rules:
+      # Suppress warnings when critical for the same alert
+      - source_match:
+          severity: critical
+        target_match:
+          severity: warning
+        equal: [alertname, cluster, namespace]
+
+  alertmanagerSpec:
+    replicas: 2
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          resources:
+            requests:
+              storage: 5Gi
+
+# ── Prometheus alert rules (Slide 8) ─────────────────────────────────────────
+additionalPrometheusRulesMap:
+  helixbeat-alerts:
+    groups:
+      - name: eks
+        rules:
+          - alert: EKSNodeNotReady
+            expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "EKS node {{ $labels.node }} not ready"
+              runbook_url: "https://wiki.helixbeat.com/runbooks/eks-node-not-ready"
+
+          - alert: PodOOMKilled
+            expr: increase(kube_pod_container_status_restarts_total[15m]) > 0
+              and on (namespace, pod) kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} > 0
+            for: 0m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} OOMKilled"
+              runbook_url: "https://wiki.helixbeat.com/runbooks/pod-oomkilled"
+
+          - alert: PVDiskHigh
+            expr: kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes > 0.85
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "PVC {{ $labels.persistentvolumeclaim }} disk usage > 85%"
+
+      - name: rds
+        rules:
+          - alert: RDSCPUHigh
+            expr: aws_rds_cpuutilization_average > 80
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "RDS {{ $labels.dbinstance_identifier }} CPU > 80%"
+              runbook_url: "https://wiki.helixbeat.com/runbooks/rds-high-cpu"
+
+          - alert: RDSConnectionsHigh
+            expr: aws_rds_database_connections_average / aws_rds_database_connections_maximum > 0.9
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "RDS {{ $labels.dbinstance_identifier }} connections > 90%"
+
+      - name: kafka
+        rules:
+          - alert: KafkaConsumerLagHigh
+            expr: kafka_consumergroup_lag_sum > 10000
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Kafka consumer group {{ $labels.consumergroup }} lag > 10k"
+              runbook_url: "https://wiki.helixbeat.com/runbooks/kafka-consumer-lag"
+
+      - name: alb
+        rules:
+          - alert: ALB5xxHigh
+            expr: |
+              rate(aws_applicationelb_httpcode_target_5_xx_count_sum[5m])
+              / rate(aws_applicationelb_request_count_sum[5m]) > 0.01
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "ALB {{ $labels.load_balancer }} 5xx error rate > 1%"
+              runbook_url: "https://wiki.helixbeat.com/runbooks/alb-5xx"
+
+      - name: security
+        rules:
+          - alert: S3BucketPolicyChange
+            expr: increase(aws_cloudtrail_events_total{event_name="PutBucketPolicy"}[5m]) > 0
+            for: 1m
+            labels:
+              severity: warning
+            annotations:
+              summary: "S3 bucket policy changed — verify in CloudTrail"

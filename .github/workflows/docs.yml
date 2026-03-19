@@ -1,0 +1,98 @@
+###############################################################################
+# HelixBeat – Documentation Pipeline
+#
+# Slide 7: terraform-docs → mkdocs → Confluence REST API
+# Triggers on every PR merge and tag push.
+###############################################################################
+name: Documentation Pipeline
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - "docs/**"
+      - "kubernetes/**"
+      - ".github/workflows/**"
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: write
+  pages: write
+
+jobs:
+  terraform-docs:
+    name: terraform-docs (auto-generate module READMEs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: terraform-docs for all modules
+        uses: terraform-docs/gh-actions@v1.2.0
+        with:
+          working-dir: terraform/modules/acm,terraform/modules/alb,terraform/modules/backup,terraform/modules/documentdb,terraform/modules/ec2,terraform/modules/efs,terraform/modules/eks,terraform/modules/iam,terraform/modules/route53,terraform/modules/s3,terraform/modules/security,terraform/modules/vpc,terraform/env-base
+          output-file: README.md
+          output-method: inject
+          git-push: "true"
+          git-commit-message: "docs(terraform): auto-update module READMEs [skip ci]"
+
+  mkdocs:
+    name: Build & publish MkDocs site
+    runs-on: ubuntu-latest
+    needs: terraform-docs
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install mkdocs
+        run: |
+          pip install \
+            mkdocs-material \
+            mkdocs-mermaid2-plugin \
+            mkdocs-git-revision-date-localized-plugin \
+            mkdocs-awesome-pages-plugin
+
+      - name: Build docs site
+        run: mkdocs build --strict
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+
+  confluence:
+    name: Publish to Confluence
+    runs-on: ubuntu-latest
+    needs: mkdocs
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests boto3 markdown
+
+      - name: Sync docs to Confluence
+        env:
+          CONFLUENCE_BASE_URL: ${{ secrets.CONFLUENCE_BASE_URL }}
+          CONFLUENCE_TOKEN: ${{ secrets.CONFLUENCE_API_TOKEN }}
+          CONFLUENCE_USER: ${{ secrets.CONFLUENCE_USER_EMAIL }}
+          CONFLUENCE_SPACE: PLATFORM
+        run: python scripts/sync-confluence.py --dir docs/ --space PLATFORM

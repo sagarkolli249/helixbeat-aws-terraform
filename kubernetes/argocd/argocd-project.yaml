@@ -1,0 +1,45 @@
+###############################################################################
+# ArgoCD AppProject – HelixBeat
+# Restricts which repos, clusters, and namespaces ArgoCD can deploy to
+###############################################################################
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: helixbeat
+  namespace: argocd
+spec:
+  description: HelixBeat application deployments
+  sourceRepos:
+    - https://github.com/helixbeat/*
+  destinations:
+    - namespace: helixbeat
+      server: https://kubernetes.default.svc
+    - namespace: helixbeat-*
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: "apps"
+      kind: Deployment
+    - group: "apps"
+      kind: StatefulSet
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: ServiceAccount
+    - group: "autoscaling"
+      kind: HorizontalPodAutoscaler
+    - group: "networking.k8s.io"
+      kind: Ingress
+    - group: "argoproj.io"
+      kind: Rollout
+  roles:
+    - name: ci-deploy
+      description: CI pipeline can sync apps
+      policies:
+        - p, proj:helixbeat:ci-deploy, applications, sync, helixbeat/*, allow
+        - p, proj:helixbeat:ci-deploy, applications, get, helixbeat/*, allow
+      jwtTokens: []

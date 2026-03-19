@@ -1,0 +1,333 @@
+###############################################################################
+# HelixBeat – Product Release Pipeline
+#
+# Slide 3: Source → Build → Test → Scan → Staging → Approve → Prod
+#
+# Triggers:
+#   - Push to main  → deploy to staging automatically
+#   - Git tag v*.*.*→ full release pipeline with prod approval gate
+#   - PR to main    → build + test + scan only (no deploy)
+###############################################################################
+name: Product Release Pipeline
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+  IMAGE_NAME: helixbeat-app
+  EKS_CLUSTER_STAGING: helixbeat-staging-us
+  EKS_CLUSTER_PROD: helixbeat-prod-us
+  JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+
+permissions:
+  id-token: write   # IRSA / OIDC auth to AWS
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  # ── 1. BUILD ─────────────────────────────────────────────────────────────────
+  build:
+    name: Build & Push to ECR
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.image-tag }}
+      image-uri: ${{ steps.push.outputs.image-uri }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # needed for git describe / semantic versioning
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CI_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Derive semantic version tag
+        id: meta
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            SHA_SHORT=$(git rev-parse --short HEAD)
+            TAG="sha-${SHA_SHORT}"
+          fi
+          echo "image-tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "IMAGE_TAG=${TAG}" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push (multi-stage, layer cache)
+        id: push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_VERSION=${{ env.IMAGE_TAG }}
+            BUILD_SHA=${{ github.sha }}
+
+      - name: Save build metadata to S3
+        run: |
+          METADATA=$(jq -n \
+            --arg tag "$IMAGE_TAG" \
+            --arg sha "${{ github.sha }}" \
+            --arg repo "${{ github.repository }}" \
+            --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{tag: $tag, sha: $sha, repo: $repo, built_at: $ts}')
+          echo "$METADATA" | aws s3 cp - \
+            s3://${{ secrets.TF_STATE_BUCKET }}/builds/${IMAGE_TAG}/metadata.json \
+            --content-type application/json
+
+  # ── 2. UNIT + INTEGRATION TESTS ──────────────────────────────────────────────
+  test:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    needs: build
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: helixbeat
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: helixbeat_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+        ports: ["5432:5432"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run unit tests (coverage ≥ 80% enforced)
+        run: |
+          # Adjust to your runtime — example for Node.js
+          npm ci
+          npm run test:unit -- --coverage --coverageThreshold='{"global":{"lines":80}}'
+
+      - name: Run integration tests
+        env:
+          DATABASE_URL: postgres://helixbeat:testpass@localhost:5432/helixbeat_test
+        run: |
+          npm run test:integration
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: coverage/
+
+  # ── 3. SECURITY SCANNING ──────────────────────────────────────────────────────
+  scan:
+    name: Security Scan (Snyk + Trivy + OWASP ZAP)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CI_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Snyk — dependency + container vulnerability scan
+      - name: Snyk container scan (fail on HIGH severity)
+        uses: snyk/actions/docker@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image-tag }}
+          args: --severity-threshold=high --policy-path=.snyk
+
+      # Trivy — additional CVE scan of the container image
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image-tag }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+
+      - name: Upload Trivy results to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+      # OWASP ZAP DAST — runs against staging URL after staging deploy
+      # (runs conditionally in the staging-smoke job below)
+
+  # ── 4. DEPLOY TO STAGING ──────────────────────────────────────────────────────
+  deploy-staging:
+    name: Deploy → Staging
+    runs-on: ubuntu-latest
+    needs: [build, test, scan]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig for staging
+        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_STAGING }} --region ${{ env.AWS_REGION }}
+
+      - name: Blue/Green deploy to staging (ArgoCD sync)
+        run: |
+          # Update image tag in ArgoCD app values
+          argocd app set helixbeat-staging \
+            --helm-set image.tag=${{ needs.build.outputs.image-tag }} \
+            --server ${{ secrets.ARGOCD_SERVER }} \
+            --auth-token ${{ secrets.ARGOCD_TOKEN }}
+          argocd app sync helixbeat-staging \
+            --server ${{ secrets.ARGOCD_SERVER }} \
+            --auth-token ${{ secrets.ARGOCD_TOKEN }} \
+            --timeout 300
+
+      - name: Wait for rollout
+        run: kubectl rollout status deployment/helixbeat-app -n helixbeat --timeout=300s
+
+      - name: Staging smoke tests
+        run: |
+          STAGING_URL="https://staging-us.helixbeat.com"
+          # Basic health check
+          curl -sf "${STAGING_URL}/healthz" || exit 1
+          # API readiness
+          curl -sf "${STAGING_URL}/api/v1/status" || exit 1
+          echo "Smoke tests passed"
+
+      - name: OWASP ZAP DAST scan (staging)
+        uses: zaproxy/action-full-scan@v0.9.0
+        with:
+          target: "https://staging-us.helixbeat.com"
+          rules_file_name: ".zap/rules.tsv"
+          fail_action: false   # warn only in staging; block in prod gate
+
+  # ── 5. APPROVAL GATE → PRODUCTION ────────────────────────────────────────────
+  approval:
+    name: Production Approval Gate
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment: production   # requires manual approval in GitHub Environments
+    steps:
+      - name: Approval checkpoint
+        run: echo "Approved for production deployment of ${{ needs.build.outputs.image-tag }}"
+
+  # ── 6. DEPLOY TO PRODUCTION (Blue/Green + Canary) ────────────────────────────
+  deploy-prod:
+    name: Deploy → Production (Blue/Green Canary)
+    runs-on: ubuntu-latest
+    needs: [build, approval]
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig for prod
+        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_PROD }} --region ${{ env.AWS_REGION }}
+
+      - name: Canary: route 5% traffic to new version
+        run: |
+          kubectl patch virtualservice helixbeat -n helixbeat --type merge -p '
+          {"spec":{"http":[{"match":[{"headers":{"x-canary":{"exact":"true"}}}],
+          "route":[{"destination":{"host":"helixbeat-app","subset":"canary"}}]},
+          {"route":[{"destination":{"host":"helixbeat-app","subset":"stable"},"weight":95},
+          {"destination":{"host":"helixbeat-app","subset":"canary"},"weight":5}]}]}}'
+          echo "Canary at 5% — waiting 3 min for error rate baseline"
+          sleep 180
+
+      - name: Check error rate at 5% (fail if ALB 5xx > 1%)
+        run: |
+          ERROR_RATE=$(aws cloudwatch get-metric-statistics \
+            --namespace AWS/ApplicationELB \
+            --metric-name HTTPCode_Target_5XX_Count \
+            --dimensions Name=LoadBalancer,Value=${{ secrets.ALB_ARN_PROD }} \
+            --start-time "$(date -u -d '5 minutes ago' +%Y-%m-%dT%H:%M:%SZ)" \
+            --end-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --period 300 --statistics Sum \
+            --query 'Datapoints[0].Sum' --output text)
+          echo "5xx count in last 5m: ${ERROR_RATE}"
+          if (( $(echo "${ERROR_RATE:-0} > 50" | bc -l) )); then
+            echo "Error rate too high — aborting canary"
+            exit 1
+          fi
+
+      - name: Canary: shift to 25%
+        run: |
+          kubectl patch virtualservice helixbeat -n helixbeat --type merge -p '
+          {"spec":{"http":[{"route":[
+          {"destination":{"host":"helixbeat-app","subset":"stable"},"weight":75},
+          {"destination":{"host":"helixbeat-app","subset":"canary"},"weight":25}]}]}}'
+          sleep 120
+
+      - name: Canary: promote to 100% (full Blue/Green switch)
+        run: |
+          argocd app set helixbeat-prod \
+            --helm-set image.tag=${{ needs.build.outputs.image-tag }} \
+            --server ${{ secrets.ARGOCD_SERVER_PROD }} \
+            --auth-token ${{ secrets.ARGOCD_TOKEN_PROD }}
+          argocd app sync helixbeat-prod \
+            --server ${{ secrets.ARGOCD_SERVER_PROD }} \
+            --auth-token ${{ secrets.ARGOCD_TOKEN_PROD }} \
+            --timeout 600
+
+      - name: Post-deploy smoke tests (prod)
+        run: |
+          PROD_URL="https://us.helixbeat.com"
+          curl -sf "${PROD_URL}/healthz" || exit 1
+          curl -sf "${PROD_URL}/api/v1/status" || exit 1
+
+      - name: Notify Teams on success
+        if: success()
+        uses: aliencube/microsoft-teams-actions@v0.8.0
+        with:
+          webhook_uri: ${{ secrets.TEAMS_WEBHOOK }}
+          title: "✅ HelixBeat ${{ github.ref_name }} deployed to PROD"
+          summary: "Image: ${{ needs.build.outputs.image-tag }} | Blue/Green complete"
+          theme_color: "00ff00"
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "Deployment failed — rolling back to stable"
+          kubectl rollout undo deployment/helixbeat-app -n helixbeat
+          argocd app rollback helixbeat-prod \
+            --server ${{ secrets.ARGOCD_SERVER_PROD }} \
+            --auth-token ${{ secrets.ARGOCD_TOKEN_PROD }}

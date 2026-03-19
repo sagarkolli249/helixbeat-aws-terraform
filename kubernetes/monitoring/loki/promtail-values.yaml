@@ -1,0 +1,103 @@
+###############################################################################
+# Promtail Helm values (DaemonSet – ships pod logs to Loki)
+# helm upgrade --install promtail grafana/promtail \
+#   --namespace monitoring -f promtail-values.yaml
+###############################################################################
+
+fullnameOverride: promtail
+
+## ── DaemonSet config ─────────────────────────────────────────────────────────
+daemonset:
+  enabled: true
+
+## ── Security ─────────────────────────────────────────────────────────────────
+podSecurityContext:
+  runAsGroup: 0       # needs root group to read /var/log
+  runAsUser: 0        # needs access to host /var/log/pods
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: true
+
+## ── Resources ────────────────────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+## ── Loki Push URL ────────────────────────────────────────────────────────────
+config:
+  clients:
+    - url: http://loki-gateway/loki/api/v1/push
+
+  snippets:
+    pipelineStages:
+      # Parse JSON logs automatically
+      - json:
+          expressions:
+            level: level
+            message: message
+      - labels:
+          level:
+      # Drop debug logs in production to reduce volume
+      - match:
+          selector: '{level="debug"}'
+          action: drop
+          drop_counter_reason: debug_log_dropped
+
+    # Scrape all pods in every namespace
+    scrapeConfigs: |
+      - job_name: kubernetes-pods
+        pipeline_stages:
+          - cri: {}
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_promtail_io_scrape]
+            action: drop
+            regex: "false"
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: app
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_container_name]
+            target_label: container
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: node
+          - replacement: /var/log/pods/*$1/*.log
+            separator: /
+            source_labels:
+              - __meta_kubernetes_pod_uid
+              - __meta_kubernetes_pod_container_name
+            target_label: __path__
+
+## ── Tolerations (run on ALL nodes including system) ─────────────────────────
+tolerations:
+  - effect: NoSchedule
+    operator: Exists
+
+## ── Volume mounts (access host log directories) ─────────────────────────────
+volumes:
+  - name: containers
+    hostPath:
+      path: /var/lib/docker/containers
+  - name: pods
+    hostPath:
+      path: /var/log/pods
+
+volumeMounts:
+  - name: containers
+    mountPath: /var/lib/docker/containers
+    readOnly: true
+  - name: pods
+    mountPath: /var/log/pods
+    readOnly: true

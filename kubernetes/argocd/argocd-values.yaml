@@ -1,0 +1,38 @@
+###############################################################################
+# ArgoCD Helm values for HelixBeat
+# Install: helm install argocd argo/argo-cd -n argocd -f kubernetes/argocd/argocd-values.yaml
+###############################################################################
+server:
+  ingress:
+    enabled: true
+    ingressClassName: alb
+    annotations:
+      kubernetes.io/ingress.class: alb
+      alb.ingress.kubernetes.io/scheme: internal
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    hosts:
+      - argocd.internal.helixbeat.com
+    tls:
+      - hosts: [argocd.internal.helixbeat.com]
+  config:
+    repositories: |
+      - type: git
+        url: https://github.com/helixbeat/helixbeat-app
+    resource.customizations: |
+      networking.k8s.io/Ingress:
+        health.lua: |
+          hs = {}
+          hs.status = "Healthy"
+          return hs
+
+configs:
+  secret:
+    # Set via: kubectl create secret generic argocd-secret -n argocd \
+    #   --from-literal=server.secretkey=$(openssl rand -base64 32)
+    createSecret: false
+
+repoServer:
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: ""  # set via terraform output iam_irsa_argocd_arn

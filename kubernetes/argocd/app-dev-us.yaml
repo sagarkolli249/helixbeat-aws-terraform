@@ -1,0 +1,57 @@
+###############################################################################
+# ArgoCD Application – HelixBeat Dev / US
+###############################################################################
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: helixbeat-dev-us
+  namespace: argocd
+  annotations:
+    notifications.argoproj.io/subscribe.on-sync-succeeded.teams: ""
+    notifications.argoproj.io/subscribe.on-sync-failed.teams: ""
+spec:
+  project: helixbeat
+  source:
+    repoURL: https://github.com/helixbeat/helixbeat-app
+    targetRevision: main
+    path: deploy/helm/helixbeat
+    helm:
+      valueFiles:
+        - values-dev.yaml
+      parameters:
+        - name: image.registry
+          value: "ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com"
+        - name: image.name
+          value: helixbeat-app
+        - name: image.tag
+          value: latest   # overwritten by CI pipeline
+        - name: environment
+          value: dev
+        - name: region
+          value: us-east-1
+        - name: replicaCount
+          value: "1"
+        - name: resources.requests.cpu
+          value: 250m
+        - name: resources.requests.memory
+          value: 256Mi
+        - name: resources.limits.cpu
+          value: 500m
+        - name: resources.limits.memory
+          value: 512Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: helixbeat
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

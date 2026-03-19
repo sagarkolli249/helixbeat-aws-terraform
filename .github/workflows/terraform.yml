@@ -1,0 +1,280 @@
+###############################################################################
+# HelixBeat – Terraform IaC Pipeline
+#
+# Slide 4: PR Raised → Plan → Cost Estimate → Security → Approval → Apply → Notify
+#
+# Triggers:
+#   - PR touching terraform/** → plan + cost + security scan (no apply)
+#   - Push to main touching terraform/** → apply (requires prior PR approval)
+#   - Manual workflow_dispatch → target a specific environment
+###############################################################################
+name: Terraform IaC Pipeline
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [dev-us, dev-in, staging-us, staging-in]
+      action:
+        description: "Terraform action"
+        required: true
+        type: choice
+        options: [plan, apply, destroy]
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+  issues: write
+
+env:
+  TF_VERSION: "1.7.5"
+  INFRACOST_VERSION: "latest"
+  COST_THRESHOLD_USD: 500   # reject if monthly delta > $500
+
+jobs:
+  # ── Detect which environments changed ────────────────────────────────────────
+  changed-envs:
+    name: Detect changed environments
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Determine changed environments
+        id: set
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ENVS='["${{ inputs.environment }}"]'
+          else
+            # Detect which env/* directories changed
+            CHANGED=$(git diff --name-only ${{ github.event.before || 'HEAD~1' }} HEAD \
+              | grep '^terraform/environments/' \
+              | awk -F'/' '{print $3}' | sort -u \
+              | jq -R . | jq -sc .)
+            # Always include shared env-base and modules changes across all envs
+            MODULE_CHANGED=$(git diff --name-only ${{ github.event.before || 'HEAD~1' }} HEAD \
+              | grep -qE '^terraform/(env-base|modules)/' && echo "true" || echo "false")
+            if [[ "$MODULE_CHANGED" == "true" ]]; then
+              ENVS='["dev-us","dev-in","staging-us","staging-in"]'
+            elif [[ -z "$CHANGED" || "$CHANGED" == "[]" ]]; then
+              ENVS='["dev-us"]'
+            else
+              ENVS="$CHANGED"
+            fi
+          fi
+          echo "matrix={\"environment\":${ENVS}}" >> "$GITHUB_OUTPUT"
+          echo "Environments to target: $ENVS"
+
+  # ── Terraform Plan + Security + Cost ─────────────────────────────────────────
+  plan:
+    name: Plan [${{ matrix.environment }}]
+    runs-on: ubuntu-latest
+    needs: changed-envs
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changed-envs.outputs.matrix) }}
+    env:
+      TF_ENV: ${{ matrix.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform ${{ env.TF_VERSION }}
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TF_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Terraform fmt check
+        run: terraform fmt -recursive -check terraform/
+
+      - name: Terraform init
+        working-directory: terraform/environments/${{ env.TF_ENV }}
+        run: terraform init -reconfigure
+
+      - name: Terraform validate
+        working-directory: terraform/environments/${{ env.TF_ENV }}
+        run: terraform validate
+
+      - name: Terraform plan (save artifact)
+        id: plan
+        working-directory: terraform/environments/${{ env.TF_ENV }}
+        run: |
+          terraform plan \
+            -out=tfplan \
+            -detailed-exitcode \
+            -input=false \
+            2>&1 | tee plan-output.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "exit-code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
+          # Exit code 2 = changes; 0 = no changes; 1 = error
+          if [[ $EXIT_CODE -eq 1 ]]; then exit 1; fi
+
+      - name: Upload plan artifact to S3
+        working-directory: terraform/environments/${{ env.TF_ENV }}
+        run: |
+          aws s3 cp tfplan \
+            s3://${{ secrets.TF_STATE_BUCKET }}/plans/${{ env.TF_ENV }}/${{ github.sha }}.tfplan \
+            --sse aws:kms
+          aws s3 cp plan-output.txt \
+            s3://${{ secrets.TF_STATE_BUCKET }}/plans/${{ env.TF_ENV }}/${{ github.sha }}-output.txt
+
+      # ── tfsec security scan ──────────────────────────────────────────────────
+      - name: tfsec (100+ AWS security rules)
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: terraform/
+          format: sarif
+          soft_fail: false
+
+      # ── Checkov CIS benchmark ────────────────────────────────────────────────
+      - name: Checkov (CIS AWS benchmark)
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: terraform/
+          framework: terraform
+          output_format: sarif
+          output_file_path: checkov.sarif
+          soft_fail: false
+          skip_check: CKV_AWS_123,CKV2_AWS_5  # list approved exceptions
+
+      - name: Upload Checkov SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov.sarif
+
+      # ── Infracost cost estimation ─────────────────────────────────────────────
+      - name: Setup Infracost
+        uses: infracost/actions/setup@v3
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      - name: Infracost cost diff
+        id: infracost
+        working-directory: terraform/environments/${{ env.TF_ENV }}
+        run: |
+          infracost breakdown \
+            --path . \
+            --terraform-plan-flags="-var-file=../../env-base/variables.tf" \
+            --format json \
+            --out-file /tmp/infracost-${{ env.TF_ENV }}.json
+
+          MONTHLY_DELTA=$(jq '.diffTotalMonthlyCost // "0"' /tmp/infracost-${{ env.TF_ENV }}.json | tr -d '"')
+          echo "monthly-delta=${MONTHLY_DELTA}" >> "$GITHUB_OUTPUT"
+
+          # Fail if delta exceeds threshold
+          if (( $(echo "$MONTHLY_DELTA > ${{ env.COST_THRESHOLD_USD }}" | bc -l 2>/dev/null || echo 0) )); then
+            echo "::error::Monthly cost delta \$${MONTHLY_DELTA} exceeds threshold \$${{ env.COST_THRESHOLD_USD }}"
+            exit 1
+          fi
+
+      # ── Post plan summary as PR comment ──────────────────────────────────────
+      - name: Comment plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const planOutput = fs.readFileSync('terraform/environments/${{ env.TF_ENV }}/plan-output.txt', 'utf8').slice(-60000);
+            const body = `## 🔷 Terraform Plan — \`${{ env.TF_ENV }}\`
+
+            **Cost delta:** \$${process.env.MONTHLY_DELTA || '0'}/mo
+            **Exit code:** ${{ steps.plan.outputs.exit-code }} (0=no-change, 2=changes)
+
+            <details><summary>Show Plan</summary>
+
+            \`\`\`hcl
+            ${planOutput}
+            \`\`\`
+            </details>
+
+            > Plan artifact saved to S3: \`plans/${{ env.TF_ENV }}/${{ github.sha }}.tfplan\``;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
+        env:
+          MONTHLY_DELTA: ${{ steps.infracost.outputs.monthly-delta }}
+
+  # ── Terraform Apply (main branch only, post-PR-approval) ─────────────────────
+  apply:
+    name: Apply [${{ matrix.environment }}]
+    runs-on: ubuntu-latest
+    needs: [changed-envs, plan]
+    if: >
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')
+    strategy:
+      max-parallel: 1   # no concurrent applies across envs
+      matrix: ${{ fromJSON(needs.changed-envs.outputs.matrix) }}
+    environment: terraform-${{ matrix.environment }}   # requires reviewer approval in GitHub Environments
+    env:
+      TF_ENV: ${{ matrix.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TF_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Terraform init
+        working-directory: terraform/environments/${{ env.TF_ENV }}
+        run: terraform init -reconfigure
+
+      - name: Download approved plan from S3
+        working-directory: terraform/environments/${{ env.TF_ENV }}
+        run: |
+          aws s3 cp \
+            s3://${{ secrets.TF_STATE_BUCKET }}/plans/${{ env.TF_ENV }}/${{ github.sha }}.tfplan \
+            tfplan
+
+      - name: Terraform apply (approved plan only)
+        working-directory: terraform/environments/${{ env.TF_ENV }}
+        run: terraform apply -input=false tfplan
+
+      - name: Notify Teams on success
+        if: success()
+        uses: aliencube/microsoft-teams-actions@v0.8.0
+        with:
+          webhook_uri: ${{ secrets.TEAMS_WEBHOOK }}
+          title: "✅ Terraform applied: ${{ env.TF_ENV }}"
+          summary: "SHA: ${{ github.sha }} | Apply complete"
+          theme_color: "0078D4"
+
+      - name: Notify Teams on failure
+        if: failure()
+        uses: aliencube/microsoft-teams-actions@v0.8.0
+        with:
+          webhook_uri: ${{ secrets.TEAMS_WEBHOOK }}
+          title: "❌ Terraform FAILED: ${{ env.TF_ENV }}"
+          summary: "SHA: ${{ github.sha }} | Check Actions for details"
+          theme_color: "FF0000"
