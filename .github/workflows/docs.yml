@@ -91,6 +91,7 @@ jobs:
         run: pip install requests boto3 markdown
 
       - name: Sync docs to Confluence
+        if: hashFiles('scripts/sync-confluence.py') != ''
         env:
           CONFLUENCE_BASE_URL: ${{ secrets.CONFLUENCE_BASE_URL }}
           CONFLUENCE_TOKEN: ${{ secrets.CONFLUENCE_API_TOKEN }}
