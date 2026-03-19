@@ -87,8 +87,7 @@ resource "aws_backup_plan" "daily" {
     completion_window = 180
 
     lifecycle {
-      cold_storage_after = 30 # Move to cold storage after 30 days
-      delete_after       = 35
+      delete_after = 35
     }
 
     copy_action {
@@ -107,8 +106,7 @@ resource "aws_backup_plan" "daily" {
     completion_window = 360
 
     lifecycle {
-      cold_storage_after = 7
-      delete_after       = 90
+      delete_after = 90
     }
   }
 

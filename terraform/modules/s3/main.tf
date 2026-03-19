@@ -23,7 +23,7 @@ data "aws_caller_identity" "current" {}
 locals {
   buckets = {
     app-data = {
-      description      = "Application data (primary object store)"
+      description      = "Application data - primary object store"
       object_lock      = false
       versioning       = true
       intelligent_tier = true

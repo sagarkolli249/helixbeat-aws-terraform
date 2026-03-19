@@ -64,8 +64,12 @@ module "helixbeat" {
   # Disable backup temporarily (e.g., during initial bringup):
   #   modules = { backup = false }
   #
-  # The active configuration (full stack):
-  modules = {}
+  # ACM and ALB disabled: us.helixbeat.com is not yet delegated at the registrar.
+  # Re-enable once GoDaddy NS records point to the Route53 hosted zone.
+  modules = {
+    acm = false
+    alb = false
+  }
 }
 
 # ── Pass-through outputs ──────────────────────────────────────────────────────
