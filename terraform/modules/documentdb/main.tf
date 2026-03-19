@@ -150,9 +150,7 @@ resource "aws_docdb_cluster" "this" {
   preferred_maintenance_window = "sun:04:00-sun:05:00"
   skip_final_snapshot          = false
   final_snapshot_identifier    = "${var.project}-${var.environment}-docdb-final"
-  copy_tags_to_snapshot        = true
-
-  # Logging → CloudWatch
+  # Logging to CloudWatch
   enabled_cloudwatch_logs_exports = ["audit", "profiler"]
 
   # Deletion protection
