@@ -18,8 +18,7 @@ terraform {
 }
 
 provider "aws" {
-  region  = "ap-south-1"
-  profile = "helixbeat"
+  region = "ap-south-1"
   default_tags { tags = { ManagedBy = "terraform" } }
 }
 
