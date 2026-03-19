@@ -38,6 +38,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  security-events: write  # required for uploading SARIF results (tfsec/Checkov)
 
 env:
   TF_VERSION: "1.7.5"
@@ -183,29 +184,51 @@ jobs:
           sarif_file: checkov.sarif
 
       # ── Infracost cost estimation ─────────────────────────────────────────────
+      # Requires INFRACOST_API_KEY secret (free at infracost.io). Skipped gracefully if not set.
       - name: Setup Infracost
+        if: env.INFRACOST_API_KEY != ''
         uses: infracost/actions/setup@v3
         with:
           api-key: ${{ secrets.INFRACOST_API_KEY }}
+        env:
+          INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
 
-      - name: Infracost cost diff
+      - name: Infracost cost estimate
         id: infracost
+        if: env.INFRACOST_API_KEY != ''
         working-directory: terraform/environments/${{ env.TF_ENV }}
+        env:
+          INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
         run: |
           infracost breakdown \
             --path . \
-            --terraform-plan-flags="-var-file=../../env-base/variables.tf" \
             --format json \
             --out-file /tmp/infracost-${{ env.TF_ENV }}.json
 
+          MONTHLY_COST=$(jq '.totalMonthlyCost // "0"' /tmp/infracost-${{ env.TF_ENV }}.json | tr -d '"')
           MONTHLY_DELTA=$(jq '.diffTotalMonthlyCost // "0"' /tmp/infracost-${{ env.TF_ENV }}.json | tr -d '"')
+          echo "monthly-cost=${MONTHLY_COST}" >> "$GITHUB_OUTPUT"
           echo "monthly-delta=${MONTHLY_DELTA}" >> "$GITHUB_OUTPUT"
 
+          # Print human-readable table to job summary
+          infracost output \
+            --path /tmp/infracost-${{ env.TF_ENV }}.json \
+            --format table | tee -a "$GITHUB_STEP_SUMMARY"
+
           # Fail if delta exceeds threshold
-          if (( $(echo "$MONTHLY_DELTA > ${{ env.COST_THRESHOLD_USD }}" | bc -l 2>/dev/null || echo 0) )); then
+          if (( $(echo "${MONTHLY_DELTA:-0} > ${{ env.COST_THRESHOLD_USD }}" | bc -l 2>/dev/null || echo 0) )); then
             echo "::error::Monthly cost delta \$${MONTHLY_DELTA} exceeds threshold \$${{ env.COST_THRESHOLD_USD }}"
             exit 1
           fi
+
+      - name: Cost estimate skipped (no API key)
+        if: env.INFRACOST_API_KEY == ''
+        env:
+          INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+        run: |
+          echo "## Cost Estimation" >> "$GITHUB_STEP_SUMMARY"
+          echo "Infracost skipped — set INFRACOST_API_KEY secret (free at infracost.io) to enable cost estimates." >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice::Infracost skipped. Add INFRACOST_API_KEY secret to enable cost estimation."
 
       # ── Post plan summary as PR comment ──────────────────────────────────────
       - name: Comment plan on PR
