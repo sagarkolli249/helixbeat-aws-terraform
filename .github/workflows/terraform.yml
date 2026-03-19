@@ -178,7 +178,7 @@ jobs:
           skip_check: CKV_AWS_123,CKV2_AWS_5,CKV_AWS_382,CKV_AWS_260,CKV_AWS_150,CKV_AWS_23,CKV_AWS_300,CKV_AWS_144,CKV_AWS_18,CKV_AWS_290,CKV2_AWS_18,CKV_AWS_21,CKV_AWS_145,CKV2_AWS_6,CKV2_AWS_62,CKV_AWS_355,CKV2_AWS_3,CKV2_AWS_31,CKV2_AWS_23,CKV2_AWS_57,CKV2_AWS_38,CKV2_AWS_39,CKV2_AWS_61,CKV2_AWS_76,CKV_AWS_13,CKV_AWS_158,CKV_AWS_252,CKV_AWS_338
 
       - name: Upload Checkov SARIF
-        if: always()
+        if: always() && hashFiles('checkov.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: checkov.sarif
