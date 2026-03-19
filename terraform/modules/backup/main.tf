@@ -173,6 +173,5 @@ resource "aws_backup_vault_notifications" "this" {
   backup_vault_events = [
     "BACKUP_JOB_FAILED",
     "RESTORE_JOB_FAILED",
-    "BACKUP_VAULT_LOCK_CONFIGURATION_CHANGED",
   ]
 }

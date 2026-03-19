@@ -268,7 +268,7 @@ resource "aws_cloudwatch_metric_alarm" "target_response_time" {
   metric_name         = "TargetResponseTime"
   namespace           = "AWS/ApplicationELB"
   period              = 60
-  statistic           = "p99"
+  extended_statistic  = "p99"
   threshold           = 2 # 2 second p99
   alarm_description   = "ALB p99 latency above 2s"
   treat_missing_data  = "notBreaching"
