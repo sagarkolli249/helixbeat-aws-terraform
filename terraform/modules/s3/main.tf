@@ -29,7 +29,7 @@ locals {
       intelligent_tier = true
     }
     backups = {
-      description      = "Application backups – vault locked"
+      description      = "Application backups - vault locked"
       object_lock      = true
       versioning       = true
       intelligent_tier = false

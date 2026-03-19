@@ -98,7 +98,7 @@ resource "aws_iam_instance_profile" "ec2" {
 # ---------------------------------------------------------------------------
 resource "aws_security_group" "ec2" {
   name        = "${var.project}-${var.environment}-ec2-sg"
-  description = "EC2 app instances – inbound from ALB only"
+  description = "EC2 app instances - inbound from ALB only"
   vpc_id      = var.vpc_id
 
   ingress {

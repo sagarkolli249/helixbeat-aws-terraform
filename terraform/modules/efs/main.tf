@@ -19,7 +19,7 @@ terraform {
 # ---------------------------------------------------------------------------
 resource "aws_security_group" "efs" {
   name        = "${var.project}-${var.environment}-efs-sg"
-  description = "EFS mount target – allow NFS from EKS nodes"
+  description = "EFS mount target - allow NFS from EKS nodes"
   vpc_id      = var.vpc_id
 
   ingress {

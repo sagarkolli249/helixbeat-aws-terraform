@@ -124,7 +124,7 @@ resource "aws_security_group_rule" "cluster_from_nodes" {
   protocol                 = "tcp"
   source_security_group_id = aws_security_group.nodes.id
   security_group_id        = aws_security_group.cluster.id
-  description              = "Nodes → API server"
+  description              = "Nodes to API server"
 }
 
 # ---------------------------------------------------------------------------
@@ -148,7 +148,7 @@ resource "aws_security_group" "nodes" {
     to_port         = 65535
     protocol        = "tcp"
     security_groups = [aws_security_group.cluster.id]
-    description     = "Control plane → nodes (kubelet, pods)"
+    description     = "Control plane to nodes (kubelet, pods)"
   }
 
   egress {

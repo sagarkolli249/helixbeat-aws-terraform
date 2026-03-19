@@ -24,7 +24,7 @@ terraform {
 # ---------------------------------------------------------------------------
 resource "aws_security_group" "alb" {
   name        = "${var.project}-${var.environment}-alb-sg"
-  description = "ALB security group – HTTPS only from internet"
+  description = "ALB security group - HTTPS only from internet"
   vpc_id      = var.vpc_id
 
   ingress {

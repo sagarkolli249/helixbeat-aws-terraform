@@ -78,7 +78,7 @@ resource "aws_docdb_subnet_group" "this" {
 # ---------------------------------------------------------------------------
 resource "aws_security_group" "docdb" {
   name        = "${var.project}-${var.environment}-docdb-sg"
-  description = "DocumentDB cluster – allow MongoDB from app tier only"
+  description = "DocumentDB cluster - allow MongoDB from app tier only"
   vpc_id      = var.vpc_id
 
   ingress {
