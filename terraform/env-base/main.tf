@@ -89,29 +89,29 @@ locals {
   # contributing modules to resolve before any module can receive its inputs.
   #
   # Tier 1 – upstream modules (ALB, EKS). These are inputs to EC2/IAM/EFS/DB.
-  alb_dns    = try(one(module.alb[*].alb_dns_name), "")
-  alb_zone   = try(one(module.alb[*].alb_zone_id), "")
-  alb_sg     = try(one(module.alb[*].security_group_id), "")
-  alb_tg_arn = try(one(module.alb[*].default_target_group_arn), "")
+  alb_dns    = try(module.alb[0].alb_dns_name, "")
+  alb_zone   = try(module.alb[0].alb_zone_id, "")
+  alb_sg     = try(module.alb[0].security_group_id, "")
+  alb_tg_arn = try(module.alb[0].default_target_group_arn, "")
 
-  eks_oidc_arn = try(one(module.eks[*].oidc_provider_arn), "")
-  eks_oidc_url = try(one(module.eks[*].cluster_oidc_issuer_url), "")
-  eks_node_sg  = try(one(module.eks[*].node_security_group_id), "")
+  eks_oidc_arn = try(module.eks[0].oidc_provider_arn, "")
+  eks_oidc_url = try(module.eks[0].cluster_oidc_issuer_url, "")
+  eks_node_sg  = try(module.eks[0].node_security_group_id, "")
 
   # Tier 2 – downstream module outputs. Used only in outputs.tf and backup.
   # Never used as inputs to other modules (which would create a cycle).
-  ec2_sg       = try(one(module.ec2[*].security_group_id), "")
-  ec2_role_arn = try(one(module.ec2[*].instance_role_arn), "")
+  ec2_sg       = try(module.ec2[0].security_group_id, "")
+  ec2_role_arn = try(module.ec2[0].instance_role_arn, "")
 
-  iam_monitor_arn = try(one(module.iam[*].monitoring_role_arn), "")
-  iam_monitor_bkt = try(one(module.iam[*].monitoring_bucket_name), "")
+  iam_monitor_arn = try(module.iam[0].monitoring_role_arn, "")
+  iam_monitor_bkt = try(module.iam[0].monitoring_bucket_name, "")
 
-  docdb_endpoint = try(one(module.documentdb[*].cluster_endpoint), "")
-  docdb_id       = try(one(module.documentdb[*].cluster_id), "")
+  docdb_endpoint = try(module.documentdb[0].cluster_endpoint, "")
+  docdb_id       = try(module.documentdb[0].cluster_id, "")
 
-  efs_arn      = try(one(module.efs[*].file_system_arn), "")
-  efs_id       = try(one(module.efs[*].file_system_id), "")
-  efs_kafka_ap = try(one(module.efs[*].kafka_access_point_id), "")
+  efs_arn      = try(module.efs[0].file_system_arn, "")
+  efs_id       = try(module.efs[0].file_system_id, "")
+  efs_kafka_ap = try(module.efs[0].kafka_access_point_id, "")
 }
 
 # =============================================================================
