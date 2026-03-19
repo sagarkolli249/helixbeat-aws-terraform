@@ -495,7 +495,7 @@ jobs:
         run: terraform apply -input=false tfplan
 
       - name: Notify Teams on success
-        if: success() && secrets.TEAMS_WEBHOOK != ''
+        if: success()
         continue-on-error: true
         uses: aliencube/microsoft-teams-actions@v0.8.0
         with:
@@ -505,7 +505,7 @@ jobs:
           theme_color: "0078D4"
 
       - name: Notify Teams on failure
-        if: failure() && secrets.TEAMS_WEBHOOK != ''
+        if: failure()
         continue-on-error: true
         uses: aliencube/microsoft-teams-actions@v0.8.0
         with:
