@@ -349,7 +349,9 @@ resource "aws_s3_bucket" "monitoring" {
 
 resource "aws_s3_bucket_versioning" "monitoring" {
   bucket = aws_s3_bucket.monitoring.id
-  versioning_configuration { status = "Enabled" }
+  versioning_configuration {
+    status = "Enabled"
+  }
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "monitoring" {

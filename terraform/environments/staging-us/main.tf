@@ -66,7 +66,10 @@ output "route53_name_servers"      { value = module.helixbeat.route53_name_serve
 output "cluster_name"              { value = module.helixbeat.cluster_name }
 output "kubeconfig_command"        { value = module.helixbeat.kubeconfig_command }
 output "alb_dns_name"              { value = module.helixbeat.alb_dns_name }
-output "documentdb_endpoint"       { value = module.helixbeat.documentdb_endpoint;       sensitive = true }
+output "documentdb_endpoint" {
+  value     = module.helixbeat.documentdb_endpoint
+  sensitive = true
+}
 output "documentdb_secret_arn"     { value = module.helixbeat.documentdb_secret_arn }
 output "s3_app_data_bucket"        { value = module.helixbeat.s3_app_data_bucket }
 output "s3_backups_bucket"         { value = module.helixbeat.s3_backups_bucket }
