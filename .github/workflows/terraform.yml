@@ -513,3 +513,42 @@ jobs:
           title: "❌ Terraform FAILED: ${{ env.TF_ENV }}"
           summary: "SHA: ${{ github.sha }} | Check Actions for details"
           theme_color: "FF0000"
+
+  # ── Terraform Destroy (manual workflow_dispatch only) ─────────────────────────
+  destroy:
+    name: "DESTROY [${{ inputs.environment }}] ⚠️"
+    runs-on: ubuntu-latest
+    needs: changed-envs
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy'
+    environment: terraform-${{ inputs.environment }}   # requires reviewer approval
+    env:
+      TF_ENV: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TF_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Terraform init
+        working-directory: terraform/environments/${{ env.TF_ENV }}
+        run: terraform init -reconfigure
+
+      - name: Terraform destroy
+        working-directory: terraform/environments/${{ env.TF_ENV }}
+        run: terraform destroy -auto-approve -input=false
+
+      - name: Clear state lock if stale
+        if: always()
+        run: |
+          aws dynamodb delete-item \
+            --table-name helixbeat-tfstate-lock-${{ env.TF_ENV }} \
+            --key '{"LockID": {"S": "helixbeat-tfstate-${{ env.TF_ENV }}/${{ env.TF_ENV }}/terraform.tfstate"}}' \
+            --region ${{ secrets.AWS_REGION }} 2>/dev/null || true
