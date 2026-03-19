@@ -217,8 +217,11 @@ resource "aws_autoscaling_group" "this" {
   name                      = "${var.project}-${var.environment}-asg"
   vpc_zone_identifier       = var.private_subnet_ids
   target_group_arns         = var.target_group_arns
-  health_check_type         = "ELB"
+  health_check_type         = length(var.target_group_arns) > 0 ? "ELB" : "EC2"
   health_check_grace_period = 120
+
+  # Do not block the pipeline waiting for instances; they start asynchronously.
+  wait_for_capacity_timeout = "0"
 
   min_size         = var.asg_min_size
   max_size         = var.asg_max_size

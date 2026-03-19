@@ -45,6 +45,17 @@ import {
   id = "helixbeat-dev-us:helixbeat-dev-us-app"
 }
 
+# EC2 launch template and ASG (created by previous partial apply)
+import {
+  to = module.helixbeat.module.ec2[0].aws_launch_template.this
+  id = "lt-082d0f33105a82827"
+}
+
+import {
+  to = module.helixbeat.module.ec2[0].aws_autoscaling_group.this
+  id = "helixbeat-dev-us-asg"
+}
+
 # IAM roles (iam module)
 import {
   to = module.helixbeat.module.iam[0].aws_iam_role.cluster_autoscaler
