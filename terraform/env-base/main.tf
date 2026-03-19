@@ -83,40 +83,35 @@ locals {
   app_node_types    = var.app_node_instance_types != null ? var.app_node_instance_types : ["${local.region_instance_family}.large"]
 
   # ── Safe cross-module output references ───────────────────────────────────
-  # When a module is disabled (count = 0), these resolve to safe fallback
-  # values so dependent modules still plan/apply without errors.
-  # Pattern: try(one(module.X[*].output), fallback)
+  # Split into individual locals (NOT a single object) to avoid evaluation
+  # cycles. Terraform evaluates each local as a unit; a single aggregated
+  # object that references both upstream and downstream modules forces all
+  # contributing modules to resolve before any module can receive its inputs.
   #
-  safe = {
-    # ALB / ACM
-    acm_cert_arn = try(one(module.acm[*].certificate_arn), "")
-    alb_dns      = try(one(module.alb[*].alb_dns_name), "")
-    alb_zone     = try(one(module.alb[*].alb_zone_id), "")
-    alb_sg       = try(one(module.alb[*].security_group_id), "")
-    alb_tg_arn   = try(one(module.alb[*].default_target_group_arn), "")
+  # Tier 1 – upstream modules (ALB, EKS). These are inputs to EC2/IAM/EFS/DB.
+  alb_dns    = try(one(module.alb[*].alb_dns_name), "")
+  alb_zone   = try(one(module.alb[*].alb_zone_id), "")
+  alb_sg     = try(one(module.alb[*].security_group_id), "")
+  alb_tg_arn = try(one(module.alb[*].default_target_group_arn), "")
 
-    # EKS
-    eks_oidc_arn = try(one(module.eks[*].oidc_provider_arn), "")
-    eks_oidc_url = try(one(module.eks[*].cluster_oidc_issuer_url), "")
-    eks_node_sg  = try(one(module.eks[*].node_security_group_id), "")
+  eks_oidc_arn = try(one(module.eks[*].oidc_provider_arn), "")
+  eks_oidc_url = try(one(module.eks[*].cluster_oidc_issuer_url), "")
+  eks_node_sg  = try(one(module.eks[*].node_security_group_id), "")
 
-    # IAM
-    iam_monitor_arn = try(one(module.iam[*].monitoring_role_arn), "")
-    iam_monitor_bkt = try(one(module.iam[*].monitoring_bucket_name), "")
+  # Tier 2 – downstream module outputs. Used only in outputs.tf and backup.
+  # Never used as inputs to other modules (which would create a cycle).
+  ec2_sg       = try(one(module.ec2[*].security_group_id), "")
+  ec2_role_arn = try(one(module.ec2[*].instance_role_arn), "")
 
-    # EC2
-    ec2_sg       = try(one(module.ec2[*].security_group_id), "")
-    ec2_role_arn = try(one(module.ec2[*].instance_role_arn), "")
+  iam_monitor_arn = try(one(module.iam[*].monitoring_role_arn), "")
+  iam_monitor_bkt = try(one(module.iam[*].monitoring_bucket_name), "")
 
-    # DocumentDB
-    docdb_endpoint = try(one(module.documentdb[*].cluster_endpoint), "")
-    docdb_id       = try(one(module.documentdb[*].cluster_id), "")
+  docdb_endpoint = try(one(module.documentdb[*].cluster_endpoint), "")
+  docdb_id       = try(one(module.documentdb[*].cluster_id), "")
 
-    # EFS
-    efs_arn      = try(one(module.efs[*].file_system_arn), "")
-    efs_id       = try(one(module.efs[*].file_system_id), "")
-    efs_kafka_ap = try(one(module.efs[*].kafka_access_point_id), "")
-  }
+  efs_arn      = try(one(module.efs[*].file_system_arn), "")
+  efs_id       = try(one(module.efs[*].file_system_id), "")
+  efs_kafka_ap = try(one(module.efs[*].kafka_access_point_id), "")
 }
 
 # =============================================================================
@@ -231,8 +226,8 @@ resource "aws_route53_record" "apex" {
   type    = "A"
 
   alias {
-    name                   = local.safe.alb_dns
-    zone_id                = local.safe.alb_zone
+    name                   = local.alb_dns
+    zone_id                = local.alb_zone
     evaluate_target_health = true
   }
 }
@@ -244,15 +239,15 @@ resource "aws_route53_record" "wildcard" {
   type    = "A"
 
   alias {
-    name                   = local.safe.alb_dns
-    zone_id                = local.safe.alb_zone
+    name                   = local.alb_dns
+    zone_id                = local.alb_zone
     evaluate_target_health = true
   }
 }
 
 resource "aws_route53_health_check" "primary" {
   count             = local.mod.alb ? 1 : 0
-  fqdn              = local.safe.alb_dns
+  fqdn              = local.alb_dns
   port              = 443
   type              = "HTTPS"
   resource_path     = "/health"
@@ -300,8 +295,8 @@ module "iam" {
   source = "../modules/iam"
 
   cluster_name           = local.cluster_name
-  oidc_provider_arn      = local.safe.eks_oidc_arn
-  oidc_provider_url      = local.safe.eks_oidc_url
+  oidc_provider_arn      = local.eks_oidc_arn
+  oidc_provider_url      = local.eks_oidc_url
   monitoring_bucket_name = "${local.name_prefix}-monitoring-${data.aws_caller_identity.current.account_id}"
   general_kms_key_arn    = module.security.general_kms_key_arn
   tags                   = local.common_tags
@@ -320,10 +315,10 @@ module "efs" {
 
   vpc_id                      = module.vpc.vpc_id
   private_subnet_ids          = module.vpc.private_subnet_ids
-  eks_node_security_group_ids = compact([local.safe.eks_node_sg])
+  eks_node_security_group_ids = compact([local.eks_node_sg])
   kms_key_arn                 = module.security.general_kms_key_arn
-  oidc_provider_arn           = local.safe.eks_oidc_arn
-  oidc_provider_url           = local.safe.eks_oidc_url
+  oidc_provider_arn           = local.eks_oidc_arn
+  oidc_provider_url           = local.eks_oidc_url
   throughput_mode             = local.region_efs_mode
   tags                        = local.common_tags
 }
@@ -342,7 +337,7 @@ module "ec2" {
 
   vpc_id                = module.vpc.vpc_id
   private_subnet_ids    = module.vpc.private_subnet_ids
-  alb_security_group_id = local.safe.alb_sg
+  alb_security_group_id = local.alb_sg
   kms_key_arn           = module.security.general_kms_key_arn
 
   ami_id               = var.ec2_ami_id
@@ -351,7 +346,7 @@ module "ec2" {
   asg_min_size         = var.asg_min_size
   asg_max_size         = var.asg_max_size
   asg_desired_capacity = var.asg_desired_capacity
-  target_group_arns    = compact([local.safe.alb_tg_arn])
+  target_group_arns    = compact([local.alb_tg_arn])
 
   tags = local.common_tags
 }
@@ -373,8 +368,8 @@ module "documentdb" {
   # compact() removes empty strings so the SG list stays valid when
   # EKS or EC2 modules are disabled
   allowed_security_group_ids = compact([
-    local.safe.eks_node_sg,
-    local.safe.ec2_sg,
+    local.eks_node_sg,
+    local.ec2_sg,
   ])
 
   kms_key_arn           = module.security.general_kms_key_arn
@@ -396,7 +391,7 @@ resource "aws_route53_record" "documentdb_internal" {
   name    = "documentdb.internal.${var.domain_name}"
   type    = "CNAME"
   ttl     = 60
-  records = [local.safe.docdb_endpoint]
+  records = [local.docdb_endpoint]
 }
 
 # -----------------------------------------------------------------------------
@@ -415,8 +410,8 @@ module "s3" {
 
   # compact() handles the case when IAM or EC2 modules are disabled
   allowed_role_arns = compact([
-    local.safe.iam_monitor_arn,
-    local.safe.ec2_role_arn,
+    local.iam_monitor_arn,
+    local.ec2_role_arn,
   ])
 
   tags = local.common_tags
@@ -439,11 +434,11 @@ module "backup" {
 
   # Build the DocumentDB ARN only when that module is enabled
   documentdb_cluster_arns = local.mod.documentdb ? [
-    "arn:aws:docdb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:cluster:${local.safe.docdb_id}"
+    "arn:aws:docdb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:cluster:${local.docdb_id}"
   ] : []
 
   # Pass an empty list when EFS is disabled
-  efs_file_system_arns = local.mod.efs ? [local.safe.efs_arn] : []
+  efs_file_system_arns = local.mod.efs ? [local.efs_arn] : []
 
   alarm_sns_topic_arn = module.security.security_alerts_sns_topic_arn
   tags                = local.common_tags
