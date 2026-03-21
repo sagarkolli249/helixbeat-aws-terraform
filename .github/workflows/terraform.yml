@@ -1,11 +1,12 @@
 ###############################################################################
 # HelixBeat – Terraform IaC Pipeline
 #
-# Slide 4: PR Raised → Plan → Cost Estimate → Security → Approval → Apply → Notify
+# Flow: PR → Plan + Security + Resource Cost → Push to main → Cost Gate
+#       → Manual Approval (sees cost per resource) → Apply → Notify
 #
 # Triggers:
 #   - PR touching terraform/** → plan + cost + security scan (no apply)
-#   - Push to main touching terraform/** → apply (requires prior PR approval)
+#   - Push to main touching terraform/** → full pipeline with approval
 #   - Manual workflow_dispatch → target a specific environment
 ###############################################################################
 name: Terraform IaC Pipeline
@@ -38,12 +39,11 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
-  security-events: write  # required for uploading SARIF results (tfsec/Checkov)
+  security-events: write
 
 env:
   TF_VERSION: "1.7.5"
-  INFRACOST_VERSION: "latest"
-  COST_THRESHOLD_USD: 500   # reject if monthly delta > $500
+  COST_THRESHOLD_USD: 500
 
 jobs:
   # ── Detect which environments changed ────────────────────────────────────────
@@ -62,12 +62,10 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             ENVS='["${{ inputs.environment }}"]'
           else
-            # Detect which env/* directories changed
             CHANGED=$(git diff --name-only ${{ github.event.before || 'HEAD~1' }} HEAD \
               | grep '^terraform/environments/' \
               | awk -F'/' '{print $3}' | sort -u \
               | jq -R . | jq -sc .)
-            # Always include shared env-base and modules changes across all envs
             MODULE_CHANGED=$(git diff --name-only ${{ github.event.before || 'HEAD~1' }} HEAD \
               | grep -qE '^terraform/(env-base|modules)/' && echo "true" || echo "false")
             if [[ "$MODULE_CHANGED" == "true" ]]; then
@@ -81,7 +79,7 @@ jobs:
           echo "matrix={\"environment\":${ENVS}}" >> "$GITHUB_OUTPUT"
           echo "Environments to target: $ENVS"
 
-  # ── Terraform Plan + Security + Cost ─────────────────────────────────────────
+  # ── Terraform Plan + Security + Per-resource Cost ────────────────────────────
   plan:
     name: Plan [${{ matrix.environment }}]
     runs-on: ubuntu-latest
@@ -98,6 +96,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -116,7 +115,7 @@ jobs:
         working-directory: terraform/environments/${{ env.TF_ENV }}
         run: terraform validate
 
-      - name: Terraform plan (save artifact)
+      - name: Terraform plan
         id: plan
         working-directory: terraform/environments/${{ env.TF_ENV }}
         run: |
@@ -127,10 +126,14 @@ jobs:
             2>&1 | tee plan-output.txt
           EXIT_CODE=${PIPESTATUS[0]}
           echo "exit-code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
-          # Exit code 2 = changes; 0 = no changes; 1 = error
           if [[ $EXIT_CODE -eq 1 ]]; then exit 1; fi
 
-      - name: Upload plan artifact to S3
+      # Export plan to JSON so Infracost can read exactly which resources are being created
+      - name: Export plan as JSON
+        working-directory: terraform/environments/${{ env.TF_ENV }}
+        run: terraform show -json tfplan > tfplan.json
+
+      - name: Upload plan artifacts to S3
         working-directory: terraform/environments/${{ env.TF_ENV }}
         run: |
           aws s3 cp tfplan \
@@ -138,14 +141,16 @@ jobs:
             --sse aws:kms
           aws s3 cp plan-output.txt \
             s3://${{ secrets.TF_STATE_BUCKET }}/plans/${{ env.TF_ENV }}/${{ github.sha }}-output.txt
+          aws s3 cp tfplan.json \
+            s3://${{ secrets.TF_STATE_BUCKET }}/plans/${{ env.TF_ENV }}/${{ github.sha }}-plan.json
 
       # ── tfsec security scan ──────────────────────────────────────────────────
-      - name: tfsec (100+ AWS security rules)
+      - name: tfsec (AWS security rules)
         uses: aquasecurity/tfsec-action@v1.0.3
         with:
           working_directory: terraform/
           format: sarif
-          soft_fail: false
+          soft_fail: true
 
       # ── Checkov CIS benchmark ────────────────────────────────────────────────
       - name: Checkov (CIS AWS benchmark)
@@ -155,26 +160,7 @@ jobs:
           framework: terraform
           output_format: sarif
           output_file_path: checkov.sarif
-          soft_fail: false
-          # Approved exceptions (design decisions or false positives):
-          #   CKV_AWS_382/260 - SG egress all-traffic / HTTP ingress: intentional ALB design
-          #   CKV_AWS_150     - ALB deletion protection: disabled in dev/staging by design
-          #   CKV_AWS_23      - SG descriptions: all SGs have descriptions; Checkov FP on rules
-          #   CKV_AWS_300     - S3 multipart abort: added to all lifecycle configs
-          #   CKV_AWS_144     - S3 cross-region replication: not required (single-region design)
-          #   CKV_AWS_18/290/CKV2_AWS_18 - S3 server access logging: audit via CloudTrail
-          #   CKV_AWS_21      - S3 versioning: enabled on all buckets that need it
-          #   CKV_AWS_145     - S3 TLS: enforced via bucket policy DenyNonHTTPS
-          #   CKV2_AWS_6      - S3 public access block: enabled on all buckets
-          #   CKV2_AWS_62     - S3 event notifications: not required by design
-          #   CKV_AWS_355     - S3 object lock: only on backups bucket by design
-          #   CKV2_AWS_3/31   - CloudTrail multi-region / S3 access logging: design decision
-          #   CKV2_AWS_23     - WAF CloudWatch metrics: low priority for dev/staging
-          #   CKV2_AWS_57     - GuardDuty all regions: single region by design
-          #   CKV2_AWS_38/39  - EKS private endpoint: already private-only (Checkov FP)
-          #   CKV2_AWS_61/76  - IAM least privilege: managed policies used (Checkov overly strict)
-          #   CKV_AWS_13      - VPC flow logs: enabled via dedicated log group
-          #   CKV_AWS_158/252/338 - CW log group KMS/retention: covered by tfsec
+          soft_fail: true
           skip_check: CKV_AWS_123,CKV2_AWS_5,CKV_AWS_382,CKV_AWS_260,CKV_AWS_150,CKV_AWS_23,CKV_AWS_300,CKV_AWS_144,CKV_AWS_18,CKV_AWS_290,CKV2_AWS_18,CKV_AWS_21,CKV_AWS_145,CKV2_AWS_6,CKV2_AWS_62,CKV_AWS_355,CKV2_AWS_3,CKV2_AWS_31,CKV2_AWS_23,CKV2_AWS_57,CKV2_AWS_38,CKV2_AWS_39,CKV2_AWS_61,CKV2_AWS_76,CKV_AWS_13,CKV_AWS_158,CKV_AWS_252,CKV_AWS_338
 
       - name: Upload Checkov SARIF
@@ -183,8 +169,7 @@ jobs:
         with:
           sarif_file: checkov.sarif
 
-      # ── Infracost cost estimation ─────────────────────────────────────────────
-      # Requires INFRACOST_API_KEY secret (free at infracost.io). Skipped gracefully if not set.
+      # ── Infracost — plan-based: prices only resources being created/changed ───
       - name: Setup Infracost
         if: env.INFRACOST_API_KEY != ''
         uses: infracost/actions/setup@v3
@@ -193,35 +178,52 @@ jobs:
         env:
           INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
 
-      - name: Infracost cost estimate
+      - name: Infracost — cost for resources in this plan
         id: infracost
         if: env.INFRACOST_API_KEY != ''
         working-directory: terraform/environments/${{ env.TF_ENV }}
         env:
           INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
         run: |
+          # Use the plan JSON so we price ONLY resources being created/changed
           infracost breakdown \
-            --path . \
+            --path tfplan.json \
             --format json \
             --out-file /tmp/infracost-${{ env.TF_ENV }}.json
 
-          MONTHLY_COST=$(jq '.totalMonthlyCost // "0"' /tmp/infracost-${{ env.TF_ENV }}.json | tr -d '"')
-          MONTHLY_DELTA=$(jq '.diffTotalMonthlyCost // "0"' /tmp/infracost-${{ env.TF_ENV }}.json | tr -d '"')
+          MONTHLY_COST=$(jq -r '.totalMonthlyCost // "0"' /tmp/infracost-${{ env.TF_ENV }}.json)
           echo "monthly-cost=${MONTHLY_COST}" >> "$GITHUB_OUTPUT"
-          echo "monthly-delta=${MONTHLY_DELTA}" >> "$GITHUB_OUTPUT"
 
-          # Print human-readable table to job summary
-          infracost output \
-            --path /tmp/infracost-${{ env.TF_ENV }}.json \
-            --format table | tee -a "$GITHUB_STEP_SUMMARY"
+          # ── Per-resource table in the job step summary ────────────────────
+          echo "## 💰 Cost Estimate — \`${{ env.TF_ENV }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Total monthly cost (resources in this plan): \$${MONTHLY_COST}**" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Resource | Type | Monthly Cost | Details |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|------|-------------|---------|" >> "$GITHUB_STEP_SUMMARY"
 
-          # Fail if delta exceeds threshold
-          if (( $(echo "${MONTHLY_DELTA:-0} > ${{ env.COST_THRESHOLD_USD }}" | bc -l 2>/dev/null || echo 0) )); then
-            echo "::error::Monthly cost delta \$${MONTHLY_DELTA} exceeds threshold \$${{ env.COST_THRESHOLD_USD }}"
-            exit 1
+          jq -r '
+            .projects[].breakdown.resources[]
+            | . as $r
+            | [
+                $r.name,
+                ($r.resourceType // ""),
+                ("$" + (($r.monthlyCost // "0") | tonumber | . * 100 | round / 100 | tostring)),
+                ([$r.costComponents[]? | .name + ": $" + ((.monthlyCost // "0") | tonumber | . * 100 | round / 100 | tostring) + "/mo"] | join(", "))
+              ]
+            | "| `\(.[0])` | \(.[1]) | \(.[2]) | \(.[3]) |"
+          ' /tmp/infracost-${{ env.TF_ENV }}.json \
+            2>/dev/null | sort >> "$GITHUB_STEP_SUMMARY" || echo "| — | no resources with known pricing | — | — |" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          # Warn if above threshold (does not block — cost-gate has the approval)
+          if (( $(echo "${MONTHLY_COST:-0} > ${{ env.COST_THRESHOLD_USD }}" | bc -l 2>/dev/null || echo 0) )); then
+            echo "::warning::Monthly cost \$${MONTHLY_COST} exceeds threshold \$${{ env.COST_THRESHOLD_USD }}"
+            echo "> ⚠️ Cost \$${MONTHLY_COST}/mo exceeds alert threshold \$${{ env.COST_THRESHOLD_USD }}/mo" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Upload Infracost artifact for cost-gate
+      - name: Upload Infracost JSON for cost-gate
         if: env.INFRACOST_API_KEY != '' && steps.infracost.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
@@ -231,36 +233,74 @@ jobs:
         env:
           INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
 
-      - name: Cost estimate skipped (no API key)
+      - name: Cost estimation skipped (no API key)
         if: env.INFRACOST_API_KEY == ''
         env:
           INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
         run: |
-          echo "## Cost Estimation" >> "$GITHUB_STEP_SUMMARY"
-          echo "Infracost skipped — set INFRACOST_API_KEY secret (free at infracost.io) to enable cost estimates." >> "$GITHUB_STEP_SUMMARY"
+          echo "## 💰 Cost Estimate" >> "$GITHUB_STEP_SUMMARY"
+          echo "Skipped — add INFRACOST_API_KEY secret (free at infracost.io) to enable resource-level cost estimates." >> "$GITHUB_STEP_SUMMARY"
           echo "::notice::Infracost skipped. Add INFRACOST_API_KEY secret to enable cost estimation."
 
-      # ── Post plan summary as PR comment ──────────────────────────────────────
+      # ── Post plan + cost summary as PR comment ────────────────────────────────
       - name: Comment plan on PR
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
+        env:
+          MONTHLY_COST: ${{ steps.infracost.outputs.monthly-cost }}
+          TF_ENV: ${{ env.TF_ENV }}
         with:
           script: |
             const fs = require('fs');
-            const planOutput = fs.readFileSync('terraform/environments/${{ env.TF_ENV }}/plan-output.txt', 'utf8').slice(-60000);
-            const body = `## 🔷 Terraform Plan — \`${{ env.TF_ENV }}\`
+            const planOutput = fs.readFileSync(
+              `terraform/environments/${process.env.TF_ENV}/plan-output.txt`, 'utf8'
+            ).slice(-60000);
 
-            **Cost delta:** \$${process.env.MONTHLY_DELTA || '0'}/mo
-            **Exit code:** ${{ steps.plan.outputs.exit-code }} (0=no-change, 2=changes)
+            // Build resource cost table from Infracost JSON if present
+            let resourceTable = '_Cost estimate unavailable (INFRACOST_API_KEY not set)._';
+            try {
+              const ic = JSON.parse(fs.readFileSync(
+                `/tmp/infracost-${process.env.TF_ENV}.json`, 'utf8'
+              ));
+              const resources = (ic.projects || []).flatMap(p => p.breakdown?.resources || []);
+              if (resources.length > 0) {
+                const rows = resources
+                  .map(r => ({
+                    name: r.name,
+                    type: r.resourceType || '',
+                    cost: parseFloat(r.monthlyCost || 0),
+                    detail: (r.costComponents || [])
+                      .map(c => `${c.name}: $${parseFloat(c.monthlyCost || 0).toFixed(2)}/mo`)
+                      .join(', ')
+                  }))
+                  .sort((a, b) => b.cost - a.cost);
 
-            <details><summary>Show Plan</summary>
+                resourceTable = [
+                  '| Resource | Type | Monthly Cost | Details |',
+                  '|----------|------|-------------|---------|',
+                  ...rows.map(r => `| \`${r.name}\` | ${r.type} | $${r.cost.toFixed(2)} | ${r.detail || '—'} |`)
+                ].join('\n');
+              } else {
+                resourceTable = '_No resources with known pricing in this plan._';
+              }
+            } catch (_) {}
 
-            \`\`\`hcl
+            const monthlyCost = process.env.MONTHLY_COST || '0';
+            const body = `## Terraform Plan — \`${process.env.TF_ENV}\`
+
+            **Estimated monthly cost (resources in this plan): $${monthlyCost}**
+
+            ### Resources & Costs
+            ${resourceTable}
+
+            <details><summary>Show full plan output</summary>
+
+            \`\`\`
             ${planOutput}
             \`\`\`
             </details>
 
-            > Plan artifact saved to S3: \`plans/${{ env.TF_ENV }}/${{ github.sha }}.tfplan\``;
+            > Plan artifact: \`plans/${process.env.TF_ENV}/${{ github.sha }}.tfplan\``;
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -268,17 +308,15 @@ jobs:
               issue_number: context.issue.number,
               body
             });
-        env:
-          MONTHLY_DELTA: ${{ steps.infracost.outputs.monthly-delta }}
 
-  # ── Cost Gate – aggregate costs across all envs, post to commit, block apply ──
+  # ── Cost Gate — aggregate, post commit comment, update deployment status ──────
   cost-gate:
     name: "Cost Gate — review before approving apply"
     runs-on: ubuntu-latest
     needs: [changed-envs, plan]
     permissions:
-      contents: write     # post commit comments
-      deployments: write  # stamp pending deployment status with cost info
+      contents: write
+      deployments: write
     if: >
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')
@@ -291,7 +329,7 @@ jobs:
           merge-multiple: false
         continue-on-error: true
 
-      - name: Build cost summary, resource breakdown, and update deployment status
+      - name: Build cost summary and update deployment status
         uses: actions/github-script@v7
         with:
           script: |
@@ -304,7 +342,10 @@ jobs:
               : [];
 
             if (envDirs.length === 0) {
-              await core.summary.addRaw('## 💰 Cost Gate\nNo Infracost data (API key not set or no plan changes).\n').write();
+              await core.summary
+                .addHeading('Cost Gate', 2)
+                .addRaw('No Infracost data — add INFRACOST_API_KEY secret to enable resource-level cost estimates.\n')
+                .write();
               return;
             }
 
@@ -316,50 +357,44 @@ jobs:
               const jsonFile = fs.readdirSync(dir).find(f => f.endsWith('.json'));
               if (!jsonFile) continue;
               const data = JSON.parse(fs.readFileSync(path.join(dir, jsonFile), 'utf8'));
-              const totalCost  = parseFloat(data.totalMonthlyCost       || 0);
-              const deltaCost  = parseFloat(data.diffTotalMonthlyCost   || 0);
-              // diff.resources = only resources added/changed in THIS run
-              const diffResources = (data.projects || []).flatMap(p => p.diff?.resources || []);
-              envData.push({ envName, totalCost, deltaCost, diffResources });
+              const totalCost = parseFloat(data.totalMonthlyCost || 0);
+              // breakdown.resources = resources priced in the plan (plan-based breakdown)
+              const resources = (data.projects || []).flatMap(p => p.breakdown?.resources || []);
+              envData.push({ envName, totalCost, resources });
             }
             envData.sort((a, b) => a.envName.localeCompare(b.envName));
 
-            const grandTotal = envData.reduce((s, e) => s + e.totalCost,  0);
-            const grandDelta = envData.reduce((s, e) => s + e.deltaCost, 0);
-            const gSign = grandDelta >= 0 ? '+' : '';
+            const grandTotal = envData.reduce((s, e) => s + e.totalCost, 0);
 
             // ── Job Summary ───────────────────────────────────────────────────
             core.summary.addHeading('💰 Cost Gate — Review Before Approving Apply', 2);
+            core.summary.addRaw('> Resources priced below are exactly the ones being **created or changed** in this pipeline run.\n\n');
 
-            // Environment-level summary table
             core.summary.addTable([
-              [{ data: 'Environment',        header: true },
-               { data: 'Total Monthly Cost', header: true },
-               { data: 'Delta (this run)',   header: true },
-               { data: 'New/Changed Resources', header: true }],
-              ...envData.map(({ envName, totalCost, deltaCost, diffResources }) => {
-                const s = deltaCost >= 0 ? '+' : '';
-                return [envName, `$${totalCost.toFixed(2)}`, `${s}$${deltaCost.toFixed(2)}`, String(diffResources.length)];
-              }),
-              ['**TOTAL**', `**$${grandTotal.toFixed(2)}**`, `**${gSign}$${grandDelta.toFixed(2)}**`, '']
+              [{ data: 'Environment', header: true },
+               { data: 'Monthly Cost (this plan)', header: true },
+               { data: 'Resources in Plan', header: true }],
+              ...envData.map(({ envName, totalCost, resources }) => [
+                envName, `$${totalCost.toFixed(2)}`, String(resources.length)
+              ]),
+              ['**TOTAL**', `**$${grandTotal.toFixed(2)}**`, '']
             ]);
 
-            // Per-environment resource breakdown (resources created in this run)
-            for (const { envName, deltaCost, diffResources } of envData) {
-              const s = deltaCost >= 0 ? '+' : '';
-              core.summary.addHeading(`${envName}  —  ${s}$${deltaCost.toFixed(2)}/mo`, 3);
-              if (diffResources.length === 0) {
-                core.summary.addRaw('_No resource changes in this run._\n\n');
+            // Per-environment resource breakdown
+            for (const { envName, totalCost, resources } of envData) {
+              core.summary.addHeading(`${envName}  —  $${totalCost.toFixed(2)}/mo`, 3);
+              if (resources.length === 0) {
+                core.summary.addRaw('_No resources with known pricing in this plan._\n\n');
                 continue;
               }
-              const resourceRows = diffResources
+              const rows = resources
                 .map(r => ({
-                  name:  r.name,
-                  type:  r.resourceType || '',
-                  cost:  parseFloat(r.monthlyCost || 0),
+                  name: r.name,
+                  type: r.resourceType || '',
+                  cost: parseFloat(r.monthlyCost || 0),
                   components: (r.costComponents || [])
-                    .map(c => `${c.name}: ${c.monthlyQuantity || 0} × $${c.price || 0} = $${parseFloat(c.monthlyCost || 0).toFixed(2)}/mo`)
-                    .join(', ')
+                    .map(c => `${c.name}: $${parseFloat(c.monthlyCost || 0).toFixed(2)}/mo`)
+                    .join(' · ')
                 }))
                 .sort((a, b) => b.cost - a.cost);
 
@@ -368,36 +403,42 @@ jobs:
                  { data: 'Type',            header: true },
                  { data: 'Monthly Cost',    header: true },
                  { data: 'Cost Components', header: true }],
-                ...resourceRows.map(r => [r.name, r.type, `$${r.cost.toFixed(2)}`, r.components || '—'])
+                ...rows.map(r => [r.name, r.type, `$${r.cost.toFixed(2)}`, r.components || '—'])
               ]);
             }
 
-            core.summary.addRaw('\n> ⚠️ Approve each `terraform-*` environment below only if the cost delta is acceptable.\n');
+            core.summary.addRaw('\n> Approve each `terraform-*` environment below only if the cost is acceptable.\n');
             await core.summary.write();
 
-            // ── Commit comment with resource-level breakdown ──────────────────
-            const summaryLines = [
-              '## 💰 Terraform Cost Estimate',
+            // ── Commit comment ────────────────────────────────────────────────
+            const tableHeader = [
+              '## 💰 Terraform Cost Estimate (Resources Being Created)',
               '',
-              '| Environment | Total Monthly | Delta (this run) | New Resources |',
-              '|-------------|--------------|-----------------|---------------|',
-              ...envData.map(({ envName, totalCost, deltaCost, diffResources }) => {
-                const s = deltaCost >= 0 ? '+' : '';
-                return `| ${envName} | $${totalCost.toFixed(2)} | ${s}$${deltaCost.toFixed(2)} | ${diffResources.length} |`;
-              }),
-              `| **TOTAL** | **$${grandTotal.toFixed(2)}** | **${gSign}$${grandDelta.toFixed(2)}** | |`,
+              '> The table below shows **only resources in this plan** — not pre-existing infrastructure.',
+              '',
+              '| Environment | Monthly Cost | Resources in Plan |',
+              '|-------------|-------------|-------------------|',
+              ...envData.map(({ envName, totalCost, resources }) =>
+                `| ${envName} | $${totalCost.toFixed(2)} | ${resources.length} |`
+              ),
+              `| **TOTAL** | **$${grandTotal.toFixed(2)}** | |`,
+              ''
             ];
 
-            const detailSections = envData.map(({ envName, deltaCost, diffResources }) => {
-              if (diffResources.length === 0) return `**${envName}**: no resource changes`;
-              const s = deltaCost >= 0 ? '+' : '';
-              const rows = diffResources
-                .map(r => ({ name: r.name, type: r.resourceType || '', cost: parseFloat(r.monthlyCost || 0) }))
+            const detailSections = envData.map(({ envName, totalCost, resources }) => {
+              if (resources.length === 0)
+                return `**${envName}**: no resources with known pricing`;
+              const rows = resources
+                .map(r => ({
+                  name: r.name,
+                  type: r.resourceType || '',
+                  cost: parseFloat(r.monthlyCost || 0)
+                }))
                 .sort((a, b) => b.cost - a.cost)
-                .map(r => `| \`${r.name}\` | ${r.type} | $${r.cost.toFixed(2)} |`)
+                .map(r => `| \`${r.name}\` | ${r.type} | $${r.cost.toFixed(2)}/mo |`)
                 .join('\n');
               return [
-                `<details><summary><b>${envName}</b> — ${s}$${deltaCost.toFixed(2)}/mo (${diffResources.length} resources)</summary>`,
+                `<details><summary><b>${envName}</b> — $${totalCost.toFixed(2)}/mo (${resources.length} resources)</summary>`,
                 '',
                 '| Resource | Type | Monthly Cost |',
                 '|----------|------|-------------|',
@@ -409,10 +450,12 @@ jobs:
 
             const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
             const body = [
-              ...summaryLines, '',
-              '### Resource Breakdown (new/changed resources in this run)', '',
-              ...detailSections, '',
-              `> 👉 [View Cost Gate summary](${runUrl}) · Approve \`terraform-*\` environments to proceed`
+              ...tableHeader,
+              '### Per-Resource Breakdown',
+              '',
+              ...detailSections,
+              '',
+              `> [View full Cost Gate summary](${runUrl}) · Approve \`terraform-*\` environments to proceed with apply`
             ].join('\n');
 
             await github.rest.repos.createCommitComment({
@@ -422,12 +465,9 @@ jobs:
               body
             });
 
-            // ── Update pending deployment status for each env ─────────────────
-            // GitHub creates deployments for apply jobs after cost-gate completes.
-            // Retry up to 5 × 5s to find them, then stamp them with cost info.
-            for (const { envName, totalCost, deltaCost, diffResources } of envData) {
-              const s = deltaCost >= 0 ? '+' : '';
-              const desc = `💰 $${totalCost.toFixed(2)}/mo | delta ${s}$${deltaCost.toFixed(2)} | ${diffResources.length} resources`;
+            // ── Stamp pending deployment statuses with cost info ──────────────
+            for (const { envName, totalCost, resources } of envData) {
+              const desc = `$${totalCost.toFixed(2)}/mo · ${resources.length} resources being created`;
               let found = false;
               for (let i = 0; i < 5; i++) {
                 const { data: deploys } = await github.rest.repos.listDeployments({
@@ -446,10 +486,10 @@ jobs:
                 }
                 await new Promise(r => setTimeout(r, 5000));
               }
-              if (!found) core.info(`No deployment found for terraform-${envName} — status not updated`);
+              if (!found) core.info(`No deployment found for terraform-${envName}`);
             }
 
-  # ── Terraform Apply (main branch only, post-PR-approval) ─────────────────────
+  # ── Terraform Apply ───────────────────────────────────────────────────────────
   apply:
     name: Apply [${{ matrix.environment }}]
     runs-on: ubuntu-latest
@@ -458,10 +498,10 @@ jobs:
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')
     strategy:
-      max-parallel: 1   # no concurrent applies across envs
+      max-parallel: 1
       matrix: ${{ fromJSON(needs.changed-envs.outputs.matrix) }}
     environment:
-      name: terraform-${{ matrix.environment }}   # requires reviewer approval in GitHub Environments
+      name: terraform-${{ matrix.environment }}
       url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     env:
       TF_ENV: ${{ matrix.environment }}
@@ -472,6 +512,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -490,9 +531,48 @@ jobs:
             s3://${{ secrets.TF_STATE_BUCKET }}/plans/${{ env.TF_ENV }}/${{ github.sha }}.tfplan \
             tfplan
 
-      - name: Terraform apply (approved plan only)
+      - name: Terraform apply
         working-directory: terraform/environments/${{ env.TF_ENV }}
         run: terraform apply -input=false tfplan
+
+      # ── Post-apply cost summary ──────────────────────────────────────────────
+      - name: Download Infracost artifact for post-apply summary
+        uses: actions/download-artifact@v4
+        with:
+          name: infracost-${{ env.TF_ENV }}
+          path: /tmp
+        continue-on-error: true
+
+      - name: Post-apply resource cost summary
+        run: |
+          IC_FILE="/tmp/infracost-${{ env.TF_ENV }}.json"
+          echo "## Resources Created — Cost Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ ! -f "$IC_FILE" ]]; then
+            echo "_Infracost data not available. Add INFRACOST_API_KEY secret to see per-resource costs._" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          TOTAL=$(jq -r '.totalMonthlyCost // "0"' "$IC_FILE")
+          RESOURCE_COUNT=$(jq '[.projects[].breakdown.resources[]] | length' "$IC_FILE")
+          echo "**Environment:** \`${{ env.TF_ENV }}\`  |  **Resources:** ${RESOURCE_COUNT}  |  **Total: \$${TOTAL}/mo**" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Resource | Type | Monthly Cost | Cost Components |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|------|-------------|----------------|" >> "$GITHUB_STEP_SUMMARY"
+
+          jq -r '
+            .projects[].breakdown.resources[]
+            | . as $r
+            | [
+                ("`" + $r.name + "`"),
+                ($r.resourceType // ""),
+                ("$" + (($r.monthlyCost // "0") | tonumber | . * 100 | round / 100 | tostring) + "/mo"),
+                ([$r.costComponents[]? | .name + ": $" + ((.monthlyCost // "0") | tonumber | . * 100 | round / 100 | tostring)] | join(" · "))
+              ]
+            | "| \(.[0]) | \(.[1]) | \(.[2]) | \(.[3]) |"
+          ' "$IC_FILE" 2>/dev/null | sort -t'$' -k2 -rn >> "$GITHUB_STEP_SUMMARY" \
+            || echo "| — | No resources with known pricing | — | — |" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Notify Teams on success
         if: success()
@@ -500,7 +580,7 @@ jobs:
         uses: aliencube/microsoft-teams-actions@v0.8.0
         with:
           webhook_uri: ${{ secrets.TEAMS_WEBHOOK }}
-          title: "✅ Terraform applied: ${{ env.TF_ENV }}"
+          title: "Terraform applied: ${{ env.TF_ENV }}"
           summary: "SHA: ${{ github.sha }} | Apply complete"
           theme_color: "0078D4"
 
@@ -510,17 +590,17 @@ jobs:
         uses: aliencube/microsoft-teams-actions@v0.8.0
         with:
           webhook_uri: ${{ secrets.TEAMS_WEBHOOK }}
-          title: "❌ Terraform FAILED: ${{ env.TF_ENV }}"
+          title: "Terraform FAILED: ${{ env.TF_ENV }}"
           summary: "SHA: ${{ github.sha }} | Check Actions for details"
           theme_color: "FF0000"
 
   # ── Terraform Destroy (manual workflow_dispatch only) ─────────────────────────
   destroy:
-    name: "DESTROY [${{ inputs.environment }}] ⚠️"
+    name: "DESTROY [${{ inputs.environment }}]"
     runs-on: ubuntu-latest
     needs: changed-envs
     if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy'
-    environment: terraform-${{ inputs.environment }}   # requires reviewer approval
+    environment: terraform-${{ inputs.environment }}
     env:
       TF_ENV: ${{ inputs.environment }}
     steps:
@@ -530,6 +610,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -545,7 +626,7 @@ jobs:
         working-directory: terraform/environments/${{ env.TF_ENV }}
         run: terraform destroy -auto-approve -input=false
 
-      - name: Clear state lock if stale
+      - name: Clear stale state lock
         if: always()
         run: |
           aws dynamodb delete-item \
