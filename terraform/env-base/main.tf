@@ -82,6 +82,10 @@ locals {
   system_node_types = var.system_node_instance_types != null ? var.system_node_instance_types : ["${local.region_instance_family}.large"]
   app_node_types    = var.app_node_instance_types != null ? var.app_node_instance_types : ["${local.region_instance_family}.large"]
 
+  # India is the primary region — node pools default to region=india.
+  # US clusters explicitly set region_label="us" via var.country_code.
+  region_label = var.country_code == "in" ? "india" : "us"
+
   # ── Safe cross-module output references ───────────────────────────────────
   # Split into individual locals (NOT a single object) to avoid evaluation
   # cycles. Terraform evaluates each local as a unit; a single aggregated
@@ -125,14 +129,15 @@ locals {
 module "vpc" {
   source = "../modules/vpc"
 
-  project            = "helixbeat"
-  environment        = "${var.environment}-${var.country_code}"
-  aws_region         = var.aws_region
-  vpc_cidr           = var.vpc_cidr
-  availability_zones = var.availability_zones
-  cluster_name       = local.cluster_name
-  excluded_endpoints = local.region_excl_ep
-  tags               = local.common_tags
+  project             = "helixbeat"
+  environment         = "${var.environment}-${var.country_code}"
+  aws_region          = var.aws_region
+  vpc_cidr            = var.vpc_cidr
+  availability_zones  = var.availability_zones
+  cluster_name        = local.cluster_name
+  excluded_endpoints  = local.region_excl_ep
+  single_nat_gateway  = var.single_nat_gateway
+  tags                = local.common_tags
 }
 
 # -----------------------------------------------------------------------------
@@ -282,6 +287,7 @@ module "eks" {
   app_node_min            = var.app_node_min
   app_node_max            = var.app_node_max
 
+  region_label     = local.region_label
   ecr_repositories = var.ecr_repositories
   tags             = local.common_tags
 }

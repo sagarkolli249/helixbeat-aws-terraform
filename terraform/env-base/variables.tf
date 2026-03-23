@@ -113,7 +113,7 @@ variable "documentdb_instance_class" {
 
 variable "documentdb_instance_count" {
   type    = number
-  default = 3
+  default = 2   # 2 instances (1 per AZ) — matches 2-AZ subnet layout
 }
 
 variable "documentdb_deletion_protection" {
@@ -159,6 +159,12 @@ variable "tags" {
 # region_config map. You only need these variables if you want to override
 # the auto-detected capability for a specific deployment.
 # ---------------------------------------------------------------------------
+
+variable "single_nat_gateway" {
+  description = "Use a single shared NAT Gateway (dev cost saving). Set true for dev, false for staging."
+  type        = bool
+  default     = false
+}
 
 variable "efs_throughput_mode" {
   description = "EFS throughput mode. Auto-set to 'bursting' for regions where elastic throughput is not available."

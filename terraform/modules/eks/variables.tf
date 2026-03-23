@@ -67,6 +67,12 @@ variable "ecr_repositories" {
   default     = ["api", "worker", "frontend"]
 }
 
+variable "region_label" {
+  description = "Human-readable region label applied to node group labels ('india' or 'us'). Default is 'india' — helm charts use nodeSelector region=india so workloads land on India nodes by default. Set to 'us' explicitly for US region clusters."
+  type        = string
+  default     = "india"
+}
+
 variable "tags" {
   description = "Common tags"
   type        = map(string)

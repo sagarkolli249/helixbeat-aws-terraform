@@ -1,0 +1,76 @@
+###############################################################################
+# HelixBeat – MinIO base values (S3-compatible in-cluster object storage)
+# Override per environment with values-dev.yaml / values-staging.yaml
+###############################################################################
+minio:
+  # ── Auth ─────────────────────────────────────────────────────────────────────
+  auth:
+    rootUser: minio-admin
+    # rootPassword: set via --set or external secret
+
+  # ── Mode: standalone (dev) / distributed (staging) ───────────────────────────
+  mode: standalone   # overridden to distributed in staging
+
+  # ── Node scheduling ──────────────────────────────────────────────────────────
+  nodeSelector:
+    region: india
+    role: app
+
+  tolerations: []
+
+  # ── Resources ────────────────────────────────────────────────────────────────
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+  # ── Persistence ──────────────────────────────────────────────────────────────
+  persistence:
+    enabled: true
+    storageClass: gp3
+    size: 50Gi   # overridden per environment
+
+  # ── Service ──────────────────────────────────────────────────────────────────
+  service:
+    type: ClusterIP
+    port: 9000
+    consolePort: 9001
+
+  # ── Ingress (console UI) ─────────────────────────────────────────────────────
+  ingress:
+    enabled: true
+    ingressClassName: alb
+    annotations:
+      kubernetes.io/ingress.class: alb
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    hostname: minio.in.helixbeat.com   # overridden per environment
+    tls: true
+
+  apiIngress:
+    enabled: true
+    ingressClassName: alb
+    annotations:
+      kubernetes.io/ingress.class: alb
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    hostname: minio-api.in.helixbeat.com   # overridden per environment
+    tls: true
+
+  # ── Default buckets (created on startup) ─────────────────────────────────────
+  defaultBuckets: "helixbeat-uploads,helixbeat-exports,helixbeat-temp"
+
+  # ── Metrics ──────────────────────────────────────────────────────────────────
+  metrics:
+    serviceMonitor:
+      enabled: true
+      namespace: monitoring
+
+  # ── Lifecycle (TLS) ──────────────────────────────────────────────────────────
+  tls:
+    enabled: false   # TLS handled by ALB ingress

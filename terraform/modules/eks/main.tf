@@ -279,7 +279,8 @@ resource "aws_eks_node_group" "system" {
   }
 
   labels = {
-    role = "system"
+    role   = "system"
+    region = var.region_label
   }
 
   taint {
@@ -318,7 +319,8 @@ resource "aws_eks_node_group" "app" {
   }
 
   labels = {
-    role = "app"
+    role   = "app"
+    region = var.region_label
   }
 
   tags = merge(var.tags, { Name = "${var.cluster_name}-app-nodes" })

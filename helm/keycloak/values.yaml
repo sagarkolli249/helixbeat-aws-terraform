@@ -1,0 +1,96 @@
+###############################################################################
+# HelixBeat – Keycloak base values
+# Override per environment with values-dev.yaml / values-staging.yaml
+###############################################################################
+keycloak:
+  auth:
+    adminUser: admin
+    # adminPassword: set via --set or external secret (do NOT commit passwords)
+
+  production: true
+  proxy: edge   # ALB terminates TLS, Keycloak sees plain HTTP
+
+  # ── Node scheduling ─────────────────────────────────────────────────────────
+  # Default to India region nodes — override in values-us.yaml for US clusters
+  nodeSelector:
+    region: india
+    role: app
+
+  tolerations: []
+
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: keycloak
+            topologyKey: kubernetes.io/hostname
+
+  # ── Replicas ─────────────────────────────────────────────────────────────────
+  replicaCount: 1   # overridden to 2 in staging
+
+  # ── Resources ────────────────────────────────────────────────────────────────
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+  # ── Service ──────────────────────────────────────────────────────────────────
+  service:
+    type: ClusterIP
+    port: 80
+    httpsPort: 443
+
+  # ── Ingress (via AWS Load Balancer Controller) ────────────────────────────────
+  ingress:
+    enabled: true
+    ingressClassName: alb
+    annotations:
+      kubernetes.io/ingress.class: alb
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+      alb.ingress.kubernetes.io/ssl-redirect: "443"
+      alb.ingress.kubernetes.io/healthcheck-path: /health/ready
+    hostname: auth.helixbeat.com   # overridden per environment
+    tls: true
+
+  # ── Database (external DocumentDB / PostgreSQL) ───────────────────────────────
+  postgresql:
+    enabled: false   # Use external DocumentDB or RDS PostgreSQL
+
+  externalDatabase:
+    host: ""         # set via --set or values overlay
+    port: 5432
+    user: keycloak
+    database: keycloak
+    # password: set via external secret
+
+  # ── Cache (JGroups for cluster discovery) ────────────────────────────────────
+  cache:
+    enabled: true
+    stackFile: ""
+
+  # ── Persistence ──────────────────────────────────────────────────────────────
+  persistence:
+    enabled: false   # stateless — config lives in DB
+
+  # ── Metrics ──────────────────────────────────────────────────────────────────
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true   # scraped by Prometheus stack
+
+  # ── Extra env vars ────────────────────────────────────────────────────────────
+  extraEnvVars:
+    - name: KC_HOSTNAME_STRICT
+      value: "false"
+    - name: KC_HTTP_ENABLED
+      value: "true"
+    - name: KC_PROXY
+      value: edge

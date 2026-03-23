@@ -1,0 +1,20 @@
+###############################################################################
+# Keycloak – Dev overrides (India primary, minimal resources)
+###############################################################################
+keycloak:
+  replicaCount: 1
+
+  ingress:
+    hostname: auth.in.helixbeat.com
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+  nodeSelector:
+    region: india
+    role: app

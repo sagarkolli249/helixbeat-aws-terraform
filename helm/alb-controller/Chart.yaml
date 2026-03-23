@@ -1,0 +1,11 @@
+apiVersion: v2
+name: helixbeat-alb-controller
+description: AWS Load Balancer Controller for HelixBeat EKS clusters
+type: application
+version: 1.0.0
+appVersion: "2.8.1"
+
+dependencies:
+  - name: aws-load-balancer-controller
+    version: "1.8.1"
+    repository: "https://aws.github.io/eks-charts"

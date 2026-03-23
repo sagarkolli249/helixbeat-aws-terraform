@@ -14,7 +14,9 @@ terraform {
 }
 
 locals {
-  az_count = length(var.availability_zones)
+  az_count  = length(var.availability_zones)
+  # single_nat_gateway=true → 1 shared NAT GW (dev cost saving); false → 1 per AZ (HA)
+  nat_count = var.single_nat_gateway ? 1 : local.az_count
 }
 
 # ---------------------------------------------------------------------------
@@ -81,7 +83,7 @@ resource "aws_subnet" "private" {
 # Elastic IPs + NAT Gateways (one per AZ for HA)
 # ---------------------------------------------------------------------------
 resource "aws_eip" "nat" {
-  count  = local.az_count
+  count  = local.nat_count
   domain = "vpc"
 
   tags = merge(var.tags, {
@@ -90,7 +92,7 @@ resource "aws_eip" "nat" {
 }
 
 resource "aws_nat_gateway" "this" {
-  count = local.az_count
+  count = local.nat_count
 
   allocation_id = aws_eip.nat[count.index].id
   subnet_id     = aws_subnet.public[count.index].id
@@ -124,9 +126,9 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
-# Private (one per AZ so each AZ uses its own NAT GW)
+# Private – one route table per NAT GW (1 if single_nat_gateway, else 1 per AZ)
 resource "aws_route_table" "private" {
-  count  = local.az_count
+  count  = local.nat_count
   vpc_id = aws_vpc.this.id
 
   route {
@@ -140,9 +142,10 @@ resource "aws_route_table" "private" {
 }
 
 resource "aws_route_table_association" "private" {
-  count          = local.az_count
-  subnet_id      = aws_subnet.private[count.index].id
-  route_table_id = aws_route_table.private[count.index].id
+  count     = local.az_count
+  subnet_id = aws_subnet.private[count.index].id
+  # All private subnets share route-table-0 when single_nat_gateway=true
+  route_table_id = aws_route_table.private[var.single_nat_gateway ? 0 : count.index].id
 }
 
 # ---------------------------------------------------------------------------

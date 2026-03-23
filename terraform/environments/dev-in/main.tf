@@ -29,7 +29,8 @@ module "helixbeat" {
   environment        = "dev"
   aws_region         = "ap-south-1"
   vpc_cidr           = "10.20.0.0/16"
-  availability_zones = ["ap-south-1a", "ap-south-1b", "ap-south-1c"]
+  availability_zones  = ["ap-south-1a", "ap-south-1b"]
+  single_nat_gateway  = true   # 1 NAT GW saves ~$65/mo in dev
   domain_name        = "in.helixbeat.com"
   kubernetes_version = "1.29"
   ec2_ami_id         = "ami-0f58b397bc5c1f2e8" # Amazon Linux 2023 ap-south-1

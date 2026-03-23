@@ -1,0 +1,18 @@
+###############################################################################
+# ALB Controller – Dev overrides
+###############################################################################
+aws-load-balancer-controller:
+  replicaCount: 1
+  region: ap-south-1
+
+  nodeSelector:
+    region: india
+    role: system
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi

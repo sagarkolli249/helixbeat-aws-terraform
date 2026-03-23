@@ -1,0 +1,45 @@
+###############################################################################
+# Observability – Dev overrides (minimal resources, shorter retention)
+###############################################################################
+prometheus:
+  prometheus:
+    prometheusSpec:
+      retention: 7d
+      retentionSize: "5GB"
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            resources:
+              requests:
+                storage: 10Gi
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+        limits:
+          cpu: "1"
+          memory: 1Gi
+
+  grafana:
+    ingress:
+      hosts:
+        - grafana.in.helixbeat.com
+    replicas: 1
+
+  alertmanager:
+    enabled: false   # no paging in dev
+
+loki:
+  loki:
+    storage:
+      s3:
+        region: ap-south-1
+    limits_config:
+      retention_period: 168h   # 7 days in dev
+
+  singleBinary:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi

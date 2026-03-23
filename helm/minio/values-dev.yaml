@@ -1,0 +1,26 @@
+###############################################################################
+# MinIO – Dev overrides (standalone, minimal storage)
+###############################################################################
+minio:
+  mode: standalone
+
+  persistence:
+    size: 20Gi
+
+  ingress:
+    hostname: minio.in.helixbeat.com
+
+  apiIngress:
+    hostname: minio-api.in.helixbeat.com
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+  nodeSelector:
+    region: india
+    role: app

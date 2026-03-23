@@ -1,0 +1,10 @@
+###############################################################################
+# ALB Controller – Staging overrides
+###############################################################################
+aws-load-balancer-controller:
+  replicaCount: 2
+  region: ap-south-1
+
+  nodeSelector:
+    region: india
+    role: system

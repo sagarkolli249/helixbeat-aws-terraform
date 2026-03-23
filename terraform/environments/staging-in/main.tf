@@ -29,7 +29,7 @@ module "helixbeat" {
   environment        = "staging"
   aws_region         = "ap-south-1"
   vpc_cidr           = "10.40.0.0/16"
-  availability_zones = ["ap-south-1a", "ap-south-1b", "ap-south-1c"]
+  availability_zones = ["ap-south-1a", "ap-south-1b"]
   domain_name        = "staging-in.helixbeat.com"
   kubernetes_version = "1.29"
   ec2_ami_id         = "ami-0f58b397bc5c1f2e8" # Amazon Linux 2023 ap-south-1

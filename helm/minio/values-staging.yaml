@@ -1,0 +1,38 @@
+###############################################################################
+# MinIO – Staging overrides (distributed mode, larger storage)
+###############################################################################
+minio:
+  mode: distributed
+
+  statefulset:
+    replicaCount: 4
+    drivesPerNode: 1
+
+  persistence:
+    size: 100Gi
+
+  ingress:
+    hostname: minio.staging-in.helixbeat.com
+
+  apiIngress:
+    hostname: minio-api.staging-in.helixbeat.com
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "4"
+      memory: 4Gi
+
+  nodeSelector:
+    region: india
+    role: app
+
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: minio
+          topologyKey: kubernetes.io/hostname

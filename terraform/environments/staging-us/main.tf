@@ -29,7 +29,7 @@ module "helixbeat" {
   environment        = "staging"
   aws_region         = "us-east-1"
   vpc_cidr           = "10.30.0.0/16"
-  availability_zones = ["us-east-1a", "us-east-1b", "us-east-1c"]
+  availability_zones = ["us-east-1a", "us-east-1b"]
   domain_name        = "staging-us.helixbeat.com"
   kubernetes_version = "1.29"
   ec2_ami_id         = "ami-0c02fb55956c7d316" # Amazon Linux 2023 us-east-1

@@ -1,0 +1,189 @@
+###############################################################################
+# HelixBeat – Observability stack base values
+# Prometheus + Grafana + Loki + Promtail
+# Override per environment with values-dev.yaml / values-staging.yaml
+###############################################################################
+
+# ── Prometheus + Grafana (kube-prometheus-stack) ─────────────────────────────
+prometheus:
+  # ── Prometheus server ───────────────────────────────────────────────────────
+  prometheus:
+    prometheusSpec:
+      retention: 15d
+      retentionSize: "10GB"
+
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: gp3
+            accessModes: [ReadWriteOnce]
+            resources:
+              requests:
+                storage: 20Gi
+
+      nodeSelector:
+        region: india
+        role: app
+
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: "2"
+          memory: 2Gi
+
+      # Scrape all ServiceMonitors in all namespaces
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+
+  # ── Grafana ─────────────────────────────────────────────────────────────────
+  grafana:
+    enabled: true
+    adminUser: admin
+    # adminPassword: set via --set or external secret
+
+    nodeSelector:
+      region: india
+      role: app
+
+    replicas: 1
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+    persistence:
+      enabled: true
+      storageClassName: gp3
+      size: 5Gi
+
+    ingress:
+      enabled: true
+      ingressClassName: alb
+      annotations:
+        kubernetes.io/ingress.class: alb
+        alb.ingress.kubernetes.io/scheme: internet-facing
+        alb.ingress.kubernetes.io/target-type: ip
+        alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+      hosts:
+        - grafana.in.helixbeat.com   # overridden per environment
+      tls: []
+
+    # Pre-configured Loki datasource
+    additionalDataSources:
+      - name: Loki
+        type: loki
+        url: http://helixbeat-observability-loki:3100
+        access: proxy
+        isDefault: false
+
+    # Default dashboards
+    dashboardProviders:
+      dashboardproviders.yaml:
+        apiVersion: 1
+        providers:
+          - name: helixbeat
+            orgId: 1
+            folder: HelixBeat
+            type: file
+            disableDeletion: false
+            options:
+              path: /var/lib/grafana/dashboards/helixbeat
+
+  # ── AlertManager ────────────────────────────────────────────────────────────
+  alertmanager:
+    enabled: true
+    alertmanagerSpec:
+      nodeSelector:
+        region: india
+        role: app
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
+
+  # ── Node exporter + kube-state-metrics (run on all nodes) ───────────────────
+  nodeExporter:
+    enabled: true
+
+  kubeStateMetrics:
+    enabled: true
+
+# ── Loki ─────────────────────────────────────────────────────────────────────
+loki:
+  deploymentMode: SingleBinary   # SimpleScalable for staging
+
+  loki:
+    auth_enabled: false
+    commonConfig:
+      replication_factor: 1
+
+    storage:
+      type: s3
+      s3:
+        region: ap-south-1          # overridden per environment
+        bucketNames:
+          chunks: ""                # set to monitoring bucket name via --set
+          ruler: ""
+          admin: ""
+
+    limits_config:
+      retention_period: 744h        # 31 days
+
+    schema_config:
+      configs:
+        - from: "2024-01-01"
+          store: tsdb
+          object_store: s3
+          schema: v13
+          index:
+            prefix: loki_index_
+            period: 24h
+
+  singleBinary:
+    replicas: 1
+    nodeSelector:
+      region: india
+      role: app
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    persistence:
+      enabled: true
+      storageClassName: gp3
+      size: 10Gi
+
+  serviceAccount:
+    annotations:
+      # Set to the monitoring IRSA role ARN via --set
+      eks.amazonaws.com/role-arn: ""
+
+# ── Promtail (log shipper — runs on every node) ───────────────────────────────
+promtail:
+  config:
+    clients:
+      - url: http://helixbeat-observability-loki:3100/loki/api/v1/push
+
+  tolerations:
+    - operator: Exists   # scrape logs from system nodes too
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi

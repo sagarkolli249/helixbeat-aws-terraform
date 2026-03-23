@@ -57,6 +57,12 @@ variable "interface_endpoints" {
   ]
 }
 
+variable "single_nat_gateway" {
+  description = "Use a single shared NAT Gateway instead of one per AZ. Reduces cost for dev environments at the expense of AZ resilience."
+  type        = bool
+  default     = false
+}
+
 variable "excluded_endpoints" {
   description = <<-EOT
     Services to remove from interface_endpoints. Use this for regions where

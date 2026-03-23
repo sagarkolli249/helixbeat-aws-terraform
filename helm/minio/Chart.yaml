@@ -1,0 +1,11 @@
+apiVersion: v2
+name: helixbeat-minio
+description: MinIO object storage for HelixBeat (S3-compatible, in-cluster)
+type: application
+version: 1.0.0
+appVersion: "RELEASE.2024-04-18"
+
+dependencies:
+  - name: minio
+    version: "14.6.16"
+    repository: "https://charts.bitnami.com/bitnami"

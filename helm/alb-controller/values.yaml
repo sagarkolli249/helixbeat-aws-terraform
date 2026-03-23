@@ -1,0 +1,59 @@
+###############################################################################
+# HelixBeat – AWS Load Balancer Controller base values
+#
+# Prerequisites (created by Terraform):
+#   • IRSA role:  module.iam.aws_lb_controller_role_arn  (eks.amazonaws.com/role-arn annotation)
+#   • EKS cluster name passed via --set aws-load-balancer-controller.clusterName
+###############################################################################
+aws-load-balancer-controller:
+  # ── Cluster ──────────────────────────────────────────────────────────────────
+  clusterName: ""   # set via --set aws-load-balancer-controller.clusterName=<cluster>
+  region: ap-south-1   # overridden per environment
+
+  # ── IRSA – uses the role created by Terraform iam module ────────────────────
+  serviceAccount:
+    create: true
+    name: aws-load-balancer-controller
+    annotations:
+      eks.amazonaws.com/role-arn: ""   # set via --set or values overlay
+
+  # ── Node scheduling — system node pool ───────────────────────────────────────
+  nodeSelector:
+    region: india
+    role: system
+
+  tolerations:
+    - key: dedicated
+      value: system
+      effect: NoSchedule
+
+  # ── Replicas ─────────────────────────────────────────────────────────────────
+  replicaCount: 2   # HA — 1 in dev (overridden)
+
+  # ── Resources ────────────────────────────────────────────────────────────────
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  # ── VPC + Subnet discovery ────────────────────────────────────────────────────
+  vpcId: ""         # set via --set or values overlay (Terraform output: vpc_id)
+
+  # ── Default ingress class ─────────────────────────────────────────────────────
+  ingressClass: alb
+  createIngressClassResource: true
+
+  # ── Enable Shield / WAF integration ──────────────────────────────────────────
+  enableShield: false
+  enableWaf: true
+  enableWafv2: true
+
+  # ── Logging ──────────────────────────────────────────────────────────────────
+  logLevel: info
+
+  # ── Metrics ──────────────────────────────────────────────────────────────────
+  serviceMonitor:
+    enabled: true
