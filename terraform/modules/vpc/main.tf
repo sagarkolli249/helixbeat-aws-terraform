@@ -14,7 +14,7 @@ terraform {
 }
 
 locals {
-  az_count  = length(var.availability_zones)
+  az_count = length(var.availability_zones)
   # single_nat_gateway=true → 1 shared NAT GW (dev cost saving); false → 1 per AZ (HA)
   nat_count = var.single_nat_gateway ? 1 : local.az_count
 }

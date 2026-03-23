@@ -129,15 +129,15 @@ locals {
 module "vpc" {
   source = "../modules/vpc"
 
-  project             = "helixbeat"
-  environment         = "${var.environment}-${var.country_code}"
-  aws_region          = var.aws_region
-  vpc_cidr            = var.vpc_cidr
-  availability_zones  = var.availability_zones
-  cluster_name        = local.cluster_name
-  excluded_endpoints  = local.region_excl_ep
-  single_nat_gateway  = var.single_nat_gateway
-  tags                = local.common_tags
+  project            = "helixbeat"
+  environment        = "${var.environment}-${var.country_code}"
+  aws_region         = var.aws_region
+  vpc_cidr           = var.vpc_cidr
+  availability_zones = var.availability_zones
+  cluster_name       = local.cluster_name
+  excluded_endpoints = local.region_excl_ep
+  single_nat_gateway = var.single_nat_gateway
+  tags               = local.common_tags
 }
 
 # -----------------------------------------------------------------------------

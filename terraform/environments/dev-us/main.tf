@@ -29,8 +29,8 @@ module "helixbeat" {
   environment        = "dev"
   aws_region         = "us-east-1"
   vpc_cidr           = "10.10.0.0/16"
-  availability_zones  = ["us-east-1a", "us-east-1b"]
-  single_nat_gateway  = true   # 1 NAT GW saves ~$65/mo in dev
+  availability_zones = ["us-east-1a", "us-east-1b"]
+  single_nat_gateway = true # 1 NAT GW saves ~$65/mo in dev
   domain_name        = "us.helixbeat.com"
   kubernetes_version = "1.29"
   ec2_ami_id         = "ami-0c02fb55956c7d316" # Amazon Linux 2023 us-east-1
