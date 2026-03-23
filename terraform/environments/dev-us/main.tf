@@ -66,10 +66,10 @@ module "helixbeat" {
   #   modules = { backup = false }
   #
   # ACM and ALB disabled: us.helixbeat.com is not yet delegated at the registrar.
-  # Re-enable once GoDaddy NS records point to the Route53 hosted zone.
+  # DocumentDB disabled: US workloads use India DocumentDB (single cluster per env tier).
   modules = {
-    acm = false
-    alb = false
+    alb        = false
+    documentdb = false
   }
 }
 

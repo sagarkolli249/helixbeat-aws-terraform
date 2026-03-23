@@ -56,9 +56,10 @@ module "helixbeat" {
   alb_enable_deletion_protection = true
 
   # ── Module toggles ───────────────────────────────────────────────────────────
-  # Staging deploys the full stack. Set individual flags to false only when
-  # temporarily disabling a module (e.g. during a planned maintenance window).
-  modules = {}
+  # DocumentDB disabled: US workloads use India DocumentDB (single cluster per env tier).
+  modules = {
+    documentdb = false
+  }
 }
 
 output "vpc_id" { value = module.helixbeat.vpc_id }
