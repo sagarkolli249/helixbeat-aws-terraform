@@ -54,7 +54,7 @@ No requirements.
 | <a name="input_country_code"></a> [country\_code](#input\_country\_code) | Two-letter ISO country code used in all resource names (us, in, om, my, lk, id) | `string` | n/a | yes |
 | <a name="input_documentdb_deletion_protection"></a> [documentdb\_deletion\_protection](#input\_documentdb\_deletion\_protection) | n/a | `bool` | `false` | no |
 | <a name="input_documentdb_instance_class"></a> [documentdb\_instance\_class](#input\_documentdb\_instance\_class) | n/a | `string` | `"db.r6g.large"` | no |
-| <a name="input_documentdb_instance_count"></a> [documentdb\_instance\_count](#input\_documentdb\_instance\_count) | n/a | `number` | `2` | no |
+| <a name="input_documentdb_instance_count"></a> [documentdb\_instance\_count](#input\_documentdb\_instance\_count) | n/a | `number` | `1` | no |
 | <a name="input_domain_name"></a> [domain\_name](#input\_domain\_name) | Country-scoped domain (e.g. 'in.helixbeat.com', 'us.helixbeat.com') | `string` | n/a | yes |
 | <a name="input_ec2_ami_id"></a> [ec2\_ami\_id](#input\_ec2\_ami\_id) | AMI ID for EC2 instances (Amazon Linux 2023 in the target region) | `string` | n/a | yes |
 | <a name="input_ec2_instance_type"></a> [ec2\_instance\_type](#input\_ec2\_instance\_type) | n/a | `string` | `"m5.large"` | no |
