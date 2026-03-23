@@ -165,6 +165,7 @@ jobs:
 
       - name: Upload Checkov SARIF
         if: always() && hashFiles('checkov.sarif') != ''
+        continue-on-error: true   # GHAS not required — private repos without Advanced Security skip gracefully
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: checkov.sarif
