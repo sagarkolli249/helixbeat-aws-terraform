@@ -51,6 +51,7 @@ module "helixbeat" {
   asg_desired_capacity    = 2
 
   documentdb_instance_class      = "db.r6g.xlarge"
+  documentdb_instance_count      = 2 # writer + reader for staging HA
   documentdb_deletion_protection = true
   alb_enable_deletion_protection = true
 

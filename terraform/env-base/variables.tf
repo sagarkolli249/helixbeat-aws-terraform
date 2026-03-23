@@ -113,7 +113,7 @@ variable "documentdb_instance_class" {
 
 variable "documentdb_instance_count" {
   type    = number
-  default = 2 # 2 instances (1 per AZ) — matches 2-AZ subnet layout
+  default = 1 # 1 instance for dev/staging; set to 2+ for HA (staging-prod)
 }
 
 variable "documentdb_deletion_protection" {
