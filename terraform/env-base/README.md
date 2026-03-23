@@ -54,7 +54,7 @@ No requirements.
 | <a name="input_country_code"></a> [country\_code](#input\_country\_code) | Two-letter ISO country code used in all resource names (us, in, om, my, lk, id) | `string` | n/a | yes |
 | <a name="input_documentdb_deletion_protection"></a> [documentdb\_deletion\_protection](#input\_documentdb\_deletion\_protection) | n/a | `bool` | `false` | no |
 | <a name="input_documentdb_instance_class"></a> [documentdb\_instance\_class](#input\_documentdb\_instance\_class) | n/a | `string` | `"db.r6g.large"` | no |
-| <a name="input_documentdb_instance_count"></a> [documentdb\_instance\_count](#input\_documentdb\_instance\_count) | n/a | `number` | `3` | no |
+| <a name="input_documentdb_instance_count"></a> [documentdb\_instance\_count](#input\_documentdb\_instance\_count) | n/a | `number` | `2` | no |
 | <a name="input_domain_name"></a> [domain\_name](#input\_domain\_name) | Country-scoped domain (e.g. 'in.helixbeat.com', 'us.helixbeat.com') | `string` | n/a | yes |
 | <a name="input_ec2_ami_id"></a> [ec2\_ami\_id](#input\_ec2\_ami\_id) | AMI ID for EC2 instances (Amazon Linux 2023 in the target region) | `string` | n/a | yes |
 | <a name="input_ec2_instance_type"></a> [ec2\_instance\_type](#input\_ec2\_instance\_type) | n/a | `string` | `"m5.large"` | no |
@@ -66,6 +66,7 @@ No requirements.
 | <a name="input_environment"></a> [environment](#input\_environment) | Deployment tier: dev or staging | `string` | n/a | yes |
 | <a name="input_kubernetes_version"></a> [kubernetes\_version](#input\_kubernetes\_version) | EKS Kubernetes version | `string` | `"1.29"` | no |
 | <a name="input_modules"></a> [modules](#input\_modules) | Fine-grained enable/disable flags for each infrastructure module. | <pre>object({<br>    alb        = optional(bool, true) # Internet-facing ALB + ACM certificate<br>    eks        = optional(bool, true) # EKS cluster, node groups, ECR<br>    ec2        = optional(bool, true) # EC2 ASG for legacy VMs (IMDSv2, SSM, Inspector)<br>    iam        = optional(bool, true) # IRSA roles (autoscaler, ALB controller, Prometheus)<br>    documentdb = optional(bool, true) # DocumentDB cluster (MongoDB 5.0 API)<br>    s3         = optional(bool, true) # S3 app-data / backups / artifacts buckets<br>    efs        = optional(bool, true) # EFS shared storage (Kafka + app access points)<br>    backup     = optional(bool, true) # AWS Backup vault with Vault Lock<br>  })</pre> | `{}` | no |
+| <a name="input_single_nat_gateway"></a> [single\_nat\_gateway](#input\_single\_nat\_gateway) | Use a single shared NAT Gateway (dev cost saving). Set true for dev, false for staging. | `bool` | `false` | no |
 | <a name="input_system_node_desired"></a> [system\_node\_desired](#input\_system\_node\_desired) | n/a | `number` | `2` | no |
 | <a name="input_system_node_instance_types"></a> [system\_node\_instance\_types](#input\_system\_node\_instance\_types) | Override system node instance types. Leave null to auto-select based on region capability map (m5 or m6i). | `list(string)` | `null` | no |
 | <a name="input_system_node_max"></a> [system\_node\_max](#input\_system\_node\_max) | n/a | `number` | `3` | no |

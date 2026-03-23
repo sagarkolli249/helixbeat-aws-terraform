@@ -49,6 +49,7 @@ No modules.
 | <a name="input_excluded_endpoints"></a> [excluded\_endpoints](#input\_excluded\_endpoints) | Services to remove from interface\_endpoints. Use this for regions where<br>specific VPC endpoint services are not yet available (e.g. ap-southeast-5,<br>me-central-1 may be missing elasticloadbalancing or autoscaling). | `list(string)` | `[]` | no |
 | <a name="input_interface_endpoints"></a> [interface\_endpoints](#input\_interface\_endpoints) | List of AWS service names to create Interface VPC Endpoints for.<br>Override per country to drop services not yet available in a region.<br>Full list available: https://docs.aws.amazon.com/vpc/latest/privatelink/aws-services-privatelink-support.html | `list(string)` | <pre>[<br>  "ecr.api",<br>  "ecr.dkr",<br>  "ec2",<br>  "sts",<br>  "logs",<br>  "ssm",<br>  "ssmmessages",<br>  "ec2messages",<br>  "elasticloadbalancing",<br>  "autoscaling"<br>]</pre> | no |
 | <a name="input_project"></a> [project](#input\_project) | Project name prefix used in resource naming | `string` | `"helixbeat"` | no |
+| <a name="input_single_nat_gateway"></a> [single\_nat\_gateway](#input\_single\_nat\_gateway) | Use a single shared NAT Gateway instead of one per AZ. Reduces cost for dev environments at the expense of AZ resilience. | `bool` | `false` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Common tags applied to all resources | `map(string)` | `{}` | no |
 | <a name="input_vpc_cidr"></a> [vpc\_cidr](#input\_vpc\_cidr) | CIDR block for the VPC | `string` | `"10.0.0.0/16"` | no |
 

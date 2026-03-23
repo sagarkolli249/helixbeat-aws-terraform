@@ -57,6 +57,7 @@ No modules.
 | <a name="input_ecr_repositories"></a> [ecr\_repositories](#input\_ecr\_repositories) | List of ECR repository names to create | `list(string)` | <pre>[<br>  "api",<br>  "worker",<br>  "frontend"<br>]</pre> | no |
 | <a name="input_kubernetes_version"></a> [kubernetes\_version](#input\_kubernetes\_version) | Kubernetes version | `string` | `"1.29"` | no |
 | <a name="input_private_subnet_ids"></a> [private\_subnet\_ids](#input\_private\_subnet\_ids) | Private subnet IDs for EKS nodes | `list(string)` | n/a | yes |
+| <a name="input_region_label"></a> [region\_label](#input\_region\_label) | Human-readable region label applied to node group labels ('india' or 'us'). Default is 'india' — helm charts use nodeSelector region=india so workloads land on India nodes by default. Set to 'us' explicitly for US region clusters. | `string` | `"india"` | no |
 | <a name="input_system_node_desired"></a> [system\_node\_desired](#input\_system\_node\_desired) | n/a | `number` | `2` | no |
 | <a name="input_system_node_instance_types"></a> [system\_node\_instance\_types](#input\_system\_node\_instance\_types) | EC2 instance types for system node group | `list(string)` | <pre>[<br>  "m5.large"<br>]</pre> | no |
 | <a name="input_system_node_max"></a> [system\_node\_max](#input\_system\_node\_max) | n/a | `number` | `4` | no |
