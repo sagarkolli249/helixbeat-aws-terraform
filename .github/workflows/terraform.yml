@@ -41,6 +41,12 @@ permissions:
   issues: write
   security-events: write
 
+# Cancel any in-progress run for the same ref when a new push arrives.
+# Prevents "Saved plan is stale" errors caused by two runs racing to apply.
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   TF_VERSION: "1.7.5"
   COST_THRESHOLD_USD: 500
@@ -525,12 +531,12 @@ jobs:
         working-directory: terraform/environments/${{ env.TF_ENV }}
         run: terraform init -reconfigure
 
-      - name: Download approved plan from S3
+      # Re-plan immediately before apply to guarantee the plan reflects current
+      # state. Using a plan saved hours/runs ago can cause "Saved plan is stale"
+      # if another operation modified state between plan and apply.
+      - name: Terraform plan (pre-apply)
         working-directory: terraform/environments/${{ env.TF_ENV }}
-        run: |
-          aws s3 cp \
-            s3://${{ secrets.TF_STATE_BUCKET }}/plans/${{ env.TF_ENV }}/${{ github.sha }}.tfplan \
-            tfplan
+        run: terraform plan -out=tfplan -input=false
 
       - name: Terraform apply
         working-directory: terraform/environments/${{ env.TF_ENV }}
